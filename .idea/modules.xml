@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ProjectModuleManager">
+    <modules>
+      <module fileurl="file://$PROJECT_DIR$/.idea/AndroidShellProject.iml" filepath="$PROJECT_DIR$/.idea/AndroidShellProject.iml" />
+      <module fileurl="file://$PROJECT_DIR$/Protector-Tool/Protector-Tool.iml" filepath="$PROJECT_DIR$/Protector-Tool/Protector-Tool.iml" />
+      <module fileurl="file://$PROJECT_DIR$/Stub-App/Stub-App.iml" filepath="$PROJECT_DIR$/Stub-App/Stub-App.iml" />
+    </modules>
+  </component>
+</project>
