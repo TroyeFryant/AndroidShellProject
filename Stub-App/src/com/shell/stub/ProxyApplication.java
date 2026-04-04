@@ -27,8 +27,6 @@ import dalvik.system.DexClassLoader;
 
 public class ProxyApplication extends Application {
 
-    private static final String T = "ShellProxy";
-
     private static final String ENCRYPTED_DEX_ASSET = "classes.dex.enc";
     private static final String CONFIG_ASSET        = "shell_config.properties";
     private static final String CONFIG_KEY_APP      = "original_application";
@@ -56,37 +54,27 @@ public class ProxyApplication extends Application {
         super.attachBaseContext(base);
 
         try {
-            android.util.Log.e(T, ">>> attachBaseContext START, native=" + sNativeLoaded);
-
             if (sNativeLoaded) {
                 initAntiDebug();
             }
 
             byte[] encryptedBlob = readAsset(base, ENCRYPTED_DEX_ASSET);
-            android.util.Log.e(T, ">>> encrypted blob size=" + encryptedBlob.length);
 
             byte[] decryptedBlob = sNativeLoaded
                     ? decryptDex(encryptedBlob)
                     : decryptDexFallback(encryptedBlob);
-            android.util.Log.e(T, ">>> decrypted blob size=" + decryptedBlob.length);
 
             java.util.List<byte[]> dexList = parseDexBlob(decryptedBlob);
-            android.util.Log.e(T, ">>> dex count=" + dexList.size());
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                android.util.Log.e(T, ">>> loadMultiDexInMemory API=" + Build.VERSION.SDK_INT);
                 loadMultiDexInMemory(base, dexList);
             } else {
                 loadMultiDexFromDisk(base, dexList);
             }
 
-            android.util.Log.e(T, ">>> DEX injection done");
-
             originalAppClassName = readOriginalAppName(base);
-            android.util.Log.e(T, ">>> originalApp=" + originalAppClassName);
 
         } catch (Exception e) {
-            android.util.Log.e(T, ">>> FAILED", e);
             throw new RuntimeException(e);
         }
     }

@@ -17,6 +17,7 @@ PROTECTOR_CLASSPATH = str(_PROJECT_ROOT / "Protector-Tool" / "build")
 PROTECTOR_MAIN_CLASS = "com.shell.protector.Main"
 
 STUB_DEX_PATH = str(_PROJECT_ROOT / "Stub-App" / "build" / "classes.dex")
+GUARD_LIBS_DIR = str(_PROJECT_ROOT / "Stub-App" / "libs")
 
 import re
 _DEX_PATTERN = re.compile(r"^classes\d*\.dex$")
@@ -193,6 +194,15 @@ def _do_repackage(original_apk: str, out_dir: str, dest_apk: str):
         raise FileNotFoundError(
             f"壳程序 stub DEX 不存在: {STUB_DEX_PATH}，请先运行 Stub-App/build.sh")
 
+    # Detect which ABIs the original APK ships (e.g. arm64-v8a, armeabi-v7a)
+    original_abis: set[str] = set()
+    with zipfile.ZipFile(original_apk, "r") as zf:
+        for name in zf.namelist():
+            if name.startswith("lib/") and name.endswith(".so"):
+                parts = name.split("/")
+                if len(parts) >= 3:
+                    original_abis.add(parts[1])
+
     with zipfile.ZipFile(original_apk, "r") as src, \
          zipfile.ZipFile(dest_apk, "w") as dst:
 
@@ -215,6 +225,15 @@ def _do_repackage(original_apk: str, out_dir: str, dest_apk: str):
             dst.write(encrypted_dex, "assets/classes.dex.enc")
         if os.path.isfile(config_file):
             dst.write(config_file, "assets/shell_config.properties")
+
+        # Inject libguard.so for each ABI present in the original APK
+        if original_abis and os.path.isdir(GUARD_LIBS_DIR):
+            for abi in sorted(original_abis):
+                so_path = os.path.join(GUARD_LIBS_DIR, abi, "libguard.so")
+                if os.path.isfile(so_path):
+                    arcname = f"lib/{abi}/libguard.so"
+                    dst.write(so_path, arcname)
+                    print(f"[repackage] 注入 {arcname}")
 
 
 def zipalign(apk_path: str):

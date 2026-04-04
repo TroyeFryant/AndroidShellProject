@@ -57,11 +57,28 @@ void check_tracer_pid() {
 
 // ═══════════════════════════════════════════════════════════════
 //  2. ptrace 自占位
+//  注意：MIUI 等 ROM 的 SELinux 策略可能直接禁止 ptrace，
+//  此时 errno == EPERM 并不意味着正在被调试，需要结合 TracerPid 判断。
 // ═══════════════════════════════════════════════════════════════
 
 void ptrace_check() {
     if (ptrace(PTRACE_TRACEME, 0, nullptr, nullptr) == -1) {
-        silent_crash();
+        // ptrace 失败，检查是否真的有调试器 attach
+        FILE *fp = fopen("/proc/self/status", "r");
+        if (fp) {
+            char line[256];
+            while (fgets(line, sizeof(line), fp)) {
+                if (strncmp(line, "TracerPid:", 10) == 0) {
+                    int tracer = atoi(line + 10);
+                    fclose(fp);
+                    if (tracer > 0) {
+                        silent_crash();
+                    }
+                    return; // ptrace 被系统策略拒绝，非调试场景
+                }
+            }
+            fclose(fp);
+        }
     }
 }
 

@@ -214,7 +214,7 @@ static jbyteArray nativeDecryptDex(JNIEnv *env, jobject /* thiz */,
     if (!jData) return nullptr;
 
     jint dataLen = env->GetArrayLength(jData);
-    auto *data = static_cast<uint8_t *>(env->GetByteArrayElements(jData, nullptr));
+    auto *data = reinterpret_cast<uint8_t *>(env->GetByteArrayElements(jData, nullptr));
 
     int plainLen = 0;
     uint8_t *plain = aes_cbc_decrypt(data, dataLen, &plainLen);

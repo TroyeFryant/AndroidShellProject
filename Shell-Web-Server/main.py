@@ -112,6 +112,28 @@ async def get_logs(task_id: str):
         return {"logs": f.read()}
 
 
+@app.get("/api/tasks")
+async def list_tasks():
+    """列出所有历史加固任务。"""
+    return {"tasks": tm.list_tasks()}
+
+
+@app.delete("/api/tasks/{task_id}")
+async def delete_task(task_id: str):
+    """删除单个任务。"""
+    ok = tm.delete_task(task_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    return {"ok": True}
+
+
+@app.delete("/api/tasks")
+async def delete_all():
+    """一键清理所有任务。"""
+    count = tm.delete_all_tasks()
+    return {"ok": True, "deleted": count}
+
+
 # ═══════════════════════════════════════════════════════════════
 #  启动入口
 # ═══════════════════════════════════════════════════════════════
