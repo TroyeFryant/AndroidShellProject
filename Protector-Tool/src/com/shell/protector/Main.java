@@ -67,24 +67,39 @@ public class Main {
         System.out.printf("输出目录 : %s%n", outDir.toAbsolutePath());
         System.out.println("----------------------------------------");
 
-        // ① 从 APK 提取 classes.dex 和 AndroidManifest.xml
-        byte[] dexBytes;
+        // ① 从 APK 提取所有 classes*.dex 和 AndroidManifest.xml
+        java.util.List<byte[]> dexList = new java.util.ArrayList<>();
         byte[] manifestBytes;
 
         try (ZipFile zip = new ZipFile(apkFile.toFile())) {
-            dexBytes = extractEntry(zip, "classes.dex");
             manifestBytes = extractEntry(zip, "AndroidManifest.xml");
+
+            dexList.add(extractEntry(zip, "classes.dex"));
+            System.out.printf("[提取] classes.dex          : %d bytes%n", dexList.get(0).length);
+
+            for (int i = 2; ; i++) {
+                String name = "classes" + i + ".dex";
+                ZipEntry entry = zip.getEntry(name);
+                if (entry == null) break;
+                byte[] data = extractEntry(zip, name);
+                dexList.add(data);
+                System.out.printf("[提取] %-22s: %d bytes%n", name, data.length);
+            }
         }
 
-        System.out.printf("[提取] classes.dex          : %d bytes%n", dexBytes.length);
         System.out.printf("[提取] AndroidManifest.xml  : %d bytes%n", manifestBytes.length);
+        System.out.printf("[提取] 共 %d 个 DEX 文件%n", dexList.size());
 
-        // ② 加密 DEX
+        // ② 打包多 DEX 为 blob 并加密
+        // Blob format: [4: count] [4: size1] [dex1] [4: size2] [dex2] ...
         System.out.println("----------------------------------------");
+        byte[] dexBlob = packDexBlob(dexList);
+        System.out.printf("[打包] 多 DEX blob          : %d bytes%n", dexBlob.length);
+
         DexEncryptor encryptor = new DexEncryptor();
-        byte[] encryptedDex = encryptor.encrypt(dexBytes);
+        byte[] encryptedDex = encryptor.encrypt(dexBlob);
         System.out.printf("[加密] AES-128-CBC 加密完成 : %d bytes -> %d bytes%n",
-                dexBytes.length, encryptedDex.length);
+                dexBlob.length, encryptedDex.length);
 
         // ③ 修改清单
         System.out.println("----------------------------------------");
@@ -112,6 +127,23 @@ public class Main {
         System.out.println("========================================");
         System.out.println("加壳处理完成！");
         System.out.println("========================================");
+    }
+
+    private static byte[] packDexBlob(java.util.List<byte[]> dexList) throws IOException {
+        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        writeInt(bos, dexList.size());
+        for (byte[] dex : dexList) {
+            writeInt(bos, dex.length);
+            bos.write(dex);
+        }
+        return bos.toByteArray();
+    }
+
+    private static void writeInt(OutputStream os, int value) throws IOException {
+        os.write((value >> 24) & 0xFF);
+        os.write((value >> 16) & 0xFF);
+        os.write((value >> 8) & 0xFF);
+        os.write(value & 0xFF);
     }
 
     private static byte[] extractEntry(ZipFile zip, String entryName) throws IOException {

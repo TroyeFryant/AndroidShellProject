@@ -34,6 +34,8 @@ public class ManifestEditor {
     private static final String ATTR_NAME         = "name";
     // android:name 对应的资源 ID
     private static final int RES_ANDROID_NAME = 0x01010003;
+    // android:appComponentFactory 对应的资源 ID
+    private static final int RES_APP_COMPONENT_FACTORY = 0x0101057A;
 
     // ── 编辑结果 ────────────────────────────────────────────────
 
@@ -133,7 +135,26 @@ public class ManifestEditor {
                     originalAppName, PROXY_APPLICATION);
         } else {
             originalAppName = "";
-            System.out.println("[ManifestEditor] <application> 未声明 android:name，使用默认 Application");
+            int proxyStringIdx = strings.size();
+            strings.add(PROXY_APPLICATION);
+
+            int androidNsIdx = indexOfString(strings,
+                    "http://schemas.android.com/apk/res/android");
+            if (androidNsIdx == -1) {
+                throw new IOException("StringPool 中未找到 Android 命名空间 URI");
+            }
+
+            tail = injectNameAttribute(tail, applicationIdx, nameAttrIdx,
+                    proxyStringIdx, androidNsIdx, resourceIds);
+            System.out.printf("[ManifestEditor] <application> 未声明 android:name，"
+                    + "已注入 android:name=\"%s\"%n", PROXY_APPLICATION);
+        }
+
+        // ④-b 移除 appComponentFactory 属性，避免 MIUI 等 ROM
+        //      因找不到 CoreComponentFactory 而跳过 ProxyApplication
+        int appCompFactoryIdx = resolveResIdIndex(resourceIds, RES_APP_COMPONENT_FACTORY);
+        if (appCompFactoryIdx >= 0) {
+            tail = removeAttribute(tail, applicationIdx, appCompFactoryIdx);
         }
 
         // ⑤ 重建 StringPool
@@ -212,6 +233,158 @@ public class ManifestEditor {
         return null;
     }
 
+    // ── 属性注入 ──────────────────────────────────────────────────
+
+    /**
+     * 向 &lt;application&gt; 标签注入 android:name 属性（用于原始清单未声明该属性的场景）。
+     * 属性必须按 resource ID 升序插入，否则 Android 的 obtainStyledAttributes
+     * 二分查找会找不到该属性。
+     */
+    private byte[] injectNameAttribute(byte[] xmlTree, int applicationIdx,
+                                        int nameAttrIdx, int proxyStringIdx,
+                                        int androidNsIdx, int[] resourceIds) {
+        ByteBuffer buf = wrap(xmlTree);
+
+        while (buf.remaining() >= 8) {
+            int chunkPos  = buf.position();
+            int chunkType = buf.getInt();
+            int chunkSize = buf.getInt();
+            if (chunkSize < 8 || chunkPos + chunkSize > xmlTree.length) break;
+
+            if (chunkType == CHUNK_START_TAG) {
+                buf.getInt(); // lineNumber
+                buf.getInt(); // comment
+                buf.getInt(); // namespaceUri
+                int tagName = buf.getInt();
+
+                if (tagName == applicationIdx) {
+                    buf.getShort(); // attributeStart
+                    buf.getShort(); // attributeSize
+                    int attrCountPos = buf.position();
+                    int attrCount = buf.getShort() & 0xFFFF;
+                    buf.getShort(); // idIndex
+                    buf.getShort(); // classIndex
+                    buf.getShort(); // styleIndex
+
+                    int attrsStart = buf.position();
+
+                    // Find sorted insertion point by resource ID
+                    int insertIdx = attrCount;
+                    for (int i = 0; i < attrCount; i++) {
+                        int attrOff = attrsStart + i * ATTRIBUTE_BYTE_SIZE;
+                        int nameIdx = getIntAt(xmlTree, attrOff + 4);
+                        int resId = (nameIdx >= 0 && nameIdx < resourceIds.length)
+                                ? resourceIds[nameIdx] : 0xFFFFFFFF;
+                        if (resId > RES_ANDROID_NAME) {
+                            insertIdx = i;
+                            break;
+                        }
+                    }
+
+                    int insertPos = attrsStart + insertIdx * ATTRIBUTE_BYTE_SIZE;
+
+                    byte[] result = new byte[xmlTree.length + ATTRIBUTE_BYTE_SIZE];
+                    System.arraycopy(xmlTree, 0, result, 0, insertPos);
+
+                    ByteBuffer attr = ByteBuffer.allocate(ATTRIBUTE_BYTE_SIZE)
+                            .order(ByteOrder.LITTLE_ENDIAN);
+                    attr.putInt(androidNsIdx);
+                    attr.putInt(nameAttrIdx);
+                    attr.putInt(proxyStringIdx);
+                    attr.putShort((short) 0x08);
+                    attr.put((byte) 0);
+                    attr.put((byte) ATTR_TYPE_STRING);
+                    attr.putInt(proxyStringIdx);
+                    System.arraycopy(attr.array(), 0, result, insertPos, ATTRIBUTE_BYTE_SIZE);
+
+                    System.arraycopy(xmlTree, insertPos, result,
+                            insertPos + ATTRIBUTE_BYTE_SIZE,
+                            xmlTree.length - insertPos);
+
+                    ByteBuffer patcher = wrap(result);
+                    patcher.position(attrCountPos);
+                    patcher.putShort((short) (attrCount + 1));
+                    patcher.position(chunkPos + 4);
+                    patcher.putInt(chunkSize + ATTRIBUTE_BYTE_SIZE);
+
+                    return result;
+                }
+            }
+
+            buf.position(chunkPos + chunkSize);
+        }
+
+        return xmlTree;
+    }
+
+    private static int getIntAt(byte[] data, int offset) {
+        return (data[offset] & 0xFF)
+             | ((data[offset + 1] & 0xFF) << 8)
+             | ((data[offset + 2] & 0xFF) << 16)
+             | ((data[offset + 3] & 0xFF) << 24);
+    }
+
+    // ── 属性移除 ──────────────────────────────────────────────────
+
+    /**
+     * 从指定标签中移除某个属性（按 name 字符串索引匹配）。
+     * 返回删除 20 字节后的新 xmlTree。
+     */
+    private byte[] removeAttribute(byte[] xmlTree, int applicationIdx, int attrNameIdx) {
+        ByteBuffer buf = wrap(xmlTree);
+
+        while (buf.remaining() >= 8) {
+            int chunkPos  = buf.position();
+            int chunkType = buf.getInt();
+            int chunkSize = buf.getInt();
+            if (chunkSize < 8 || chunkPos + chunkSize > xmlTree.length) break;
+
+            if (chunkType == CHUNK_START_TAG) {
+                buf.getInt(); // lineNumber
+                buf.getInt(); // comment
+                buf.getInt(); // namespaceUri
+                int tagName = buf.getInt();
+
+                if (tagName == applicationIdx) {
+                    buf.getShort(); // attributeStart
+                    buf.getShort(); // attributeSize
+                    int attrCountPos = buf.position();
+                    int attrCount = buf.getShort() & 0xFFFF;
+                    buf.getShort(); // idIndex
+                    buf.getShort(); // classIndex
+                    buf.getShort(); // styleIndex
+
+                    int attrsStart = buf.position();
+
+                    for (int i = 0; i < attrCount; i++) {
+                        int attrOff = attrsStart + i * ATTRIBUTE_BYTE_SIZE;
+                        int nameIdx = getIntAt(xmlTree, attrOff + 4);
+                        if (nameIdx == attrNameIdx) {
+                            byte[] result = new byte[xmlTree.length - ATTRIBUTE_BYTE_SIZE];
+                            System.arraycopy(xmlTree, 0, result, 0, attrOff);
+                            System.arraycopy(xmlTree, attrOff + ATTRIBUTE_BYTE_SIZE,
+                                    result, attrOff,
+                                    xmlTree.length - attrOff - ATTRIBUTE_BYTE_SIZE);
+
+                            ByteBuffer patcher = wrap(result);
+                            patcher.position(attrCountPos);
+                            patcher.putShort((short) (attrCount - 1));
+                            patcher.position(chunkPos + 4);
+                            patcher.putInt(chunkSize - ATTRIBUTE_BYTE_SIZE);
+
+                            System.out.printf("[ManifestEditor] 已移除 <application> 的 appComponentFactory 属性%n");
+                            return result;
+                        }
+                    }
+                    return xmlTree;
+                }
+            }
+
+            buf.position(chunkPos + chunkSize);
+        }
+        return xmlTree;
+    }
+
     // ── ResourceID 解析 ─────────────────────────────────────────
 
     /**
@@ -238,6 +411,18 @@ public class ManifestEditor {
             }
         }
         return indexOfString(strings, ATTR_NAME);
+    }
+
+    /**
+     * 在 ResourceID 表中查找指定资源 ID 对应的字符串索引，未找到返回 -1。
+     */
+    private int resolveResIdIndex(int[] resourceIds, int targetResId) {
+        for (int i = 0; i < resourceIds.length; i++) {
+            if (resourceIds[i] == targetResId) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     // ── StringPool 重建 ─────────────────────────────────────────
