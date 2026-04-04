@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Android Shell Protector</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: { brand: { 500: '#6366f1', 600: '#4f46e5', 700: '#4338ca' } },
+          animation: { 'pulse-slow': 'pulse 3s cubic-bezier(0.4,0,0.6,1) infinite' },
+        }
+      }
+    }
+  </script>
+  <style>
+    body { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+    #drop-zone.drag-over { border-color: #6366f1; background: rgba(99,102,241,0.08); }
+    .progress-bar { transition: width 0.6s ease; }
+    pre::-webkit-scrollbar { width: 6px; }
+    pre::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+  </style>
+</head>
+<body class="bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 min-h-screen flex items-center justify-center p-4">
+
+  <div class="w-full max-w-xl">
+
+    <!-- Header -->
+    <div class="text-center mb-8">
+      <div class="inline-flex items-center gap-3 mb-2">
+        <div class="w-10 h-10 rounded-xl bg-brand-600 flex items-center justify-center text-xl">&#x1F6E1;</div>
+        <h1 class="text-2xl font-bold text-white tracking-tight">Android Shell Protector</h1>
+      </div>
+      <p class="text-slate-400 text-sm">上传 APK &middot; 一键加固 &middot; 安全下载</p>
+    </div>
+
+    <!-- Main Card -->
+    <div class="bg-slate-800/50 backdrop-blur border border-slate-700/40 rounded-2xl shadow-2xl overflow-hidden">
+
+      <!-- ① Upload Zone -->
+      <div id="section-upload" class="p-8">
+        <div id="drop-zone"
+             class="border-2 border-dashed border-slate-600 rounded-xl p-10 text-center cursor-pointer
+                    hover:border-brand-500 hover:bg-brand-500/5 transition-all duration-200">
+          <div class="text-4xl mb-3 opacity-70">&#x1F4F1;</div>
+          <p class="text-white font-medium mb-1">拖拽 APK 文件到此处</p>
+          <p class="text-slate-400 text-sm">或 <span class="text-brand-500 underline">点击选择文件</span></p>
+          <input id="file-input" type="file" accept=".apk" class="hidden">
+        </div>
+        <p id="upload-error" class="text-red-400 text-sm mt-3 hidden"></p>
+      </div>
+
+      <!-- ② Progress Section -->
+      <div id="section-progress" class="p-8 hidden">
+        <div class="flex items-center gap-3 mb-4">
+          <div class="w-8 h-8 rounded-lg bg-brand-600/20 flex items-center justify-center">
+            <svg class="w-4 h-4 text-brand-500 animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+            </svg>
+          </div>
+          <div>
+            <p id="progress-filename" class="text-white text-sm font-medium"></p>
+            <p id="progress-message" class="text-slate-400 text-xs"></p>
+          </div>
+        </div>
+        <!-- Progress bar -->
+        <div class="w-full bg-slate-700/50 rounded-full h-2.5 mb-2">
+          <div id="progress-bar" class="progress-bar bg-gradient-to-r from-blue-500 to-brand-500 h-2.5 rounded-full" style="width:0%"></div>
+        </div>
+        <p id="progress-percent" class="text-right text-slate-500 text-xs">0%</p>
+
+        <!-- Log toggle -->
+        <button id="btn-toggle-log"
+                class="mt-4 text-xs text-slate-400 hover:text-slate-200 flex items-center gap-1 transition-colors">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/>
+          </svg>
+          查看加固日志
+        </button>
+        <pre id="log-box" class="hidden mt-2 bg-slate-900/80 rounded-lg p-4 text-xs text-slate-300 max-h-48 overflow-y-auto leading-relaxed"></pre>
+      </div>
+
+      <!-- ③ Result Section -->
+      <div id="section-result" class="p-8 hidden">
+        <!-- Success -->
+        <div id="result-success" class="hidden text-center">
+          <div class="w-14 h-14 mx-auto mb-4 rounded-full bg-emerald-500/15 flex items-center justify-center text-2xl">&#x2705;</div>
+          <p class="text-white font-semibold mb-1">加固完成</p>
+          <p id="result-filename" class="text-slate-400 text-sm mb-5"></p>
+          <a id="btn-download"
+             class="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-medium
+                    px-6 py-2.5 rounded-xl transition-colors shadow-lg shadow-emerald-600/20">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/>
+            </svg>
+            下载加固产物
+          </a>
+          <button id="btn-restart" class="block mx-auto mt-4 text-xs text-slate-400 hover:text-slate-200 transition-colors">
+            &larr; 继续加固其他 APK
+          </button>
+        </div>
+        <!-- Fail -->
+        <div id="result-fail" class="hidden text-center">
+          <div class="w-14 h-14 mx-auto mb-4 rounded-full bg-red-500/15 flex items-center justify-center text-2xl">&#x274C;</div>
+          <p class="text-white font-semibold mb-1">加固失败</p>
+          <p id="fail-message" class="text-red-400 text-sm mb-5"></p>
+          <button id="btn-retry" class="text-sm text-slate-400 hover:text-slate-200 transition-colors">&larr; 重新上传</button>
+        </div>
+      </div>
+
+    </div>
+
+    <p class="text-center text-slate-600 text-xs mt-6">Android Shell Protector &mdash; 安全研究与学习用途</p>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
