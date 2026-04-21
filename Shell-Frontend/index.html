@@ -9,8 +9,7 @@
     tailwind.config = {
       theme: {
         extend: {
-          colors: { brand: { 500: '#6366f1', 600: '#4f46e5', 700: '#4338ca' } },
-          animation: { 'pulse-slow': 'pulse 3s cubic-bezier(0.4,0,0.6,1) infinite' },
+          colors: { brand: { 400:'#818cf8', 500:'#6366f1', 600:'#4f46e5', 700:'#4338ca' } },
         }
       }
     }
@@ -19,132 +18,274 @@
     body { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
     #drop-zone.drag-over { border-color: #6366f1; background: rgba(99,102,241,0.08); }
     .progress-bar { transition: width 0.6s ease; }
-    pre::-webkit-scrollbar { width: 6px; }
-    pre::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
     .task-row { transition: background 0.15s; }
     .task-row:hover { background: rgba(99,102,241,0.06); }
+    .layer-row { transition: all 0.15s; }
+    .layer-row:hover { background: rgba(99,102,241,0.06); }
+    .tag { display:inline-flex; align-items:center; padding:2px 8px; border-radius:9999px; font-size:11px; font-weight:500; }
+    .nav-item { transition: all 0.15s; }
+    .nav-item:hover { background: rgba(99,102,241,0.08); }
+    .nav-item.active { background: rgba(99,102,241,0.12); color: #818cf8; border-right: 2px solid #6366f1; }
+    .card { background: rgba(30,41,59,0.5); backdrop-filter: blur(12px); border: 1px solid rgba(51,65,85,0.4); border-radius: 1rem; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); overflow: hidden; }
   </style>
 </head>
-<body class="bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 min-h-screen flex flex-col items-center p-4">
+<body class="bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 min-h-screen text-slate-300">
 
-  <div class="w-full max-w-2xl">
+  <div class="flex min-h-screen">
 
-    <!-- Header -->
-    <div class="text-center mb-8 mt-6">
-      <div class="inline-flex items-center gap-3 mb-2">
-        <div class="w-10 h-10 rounded-xl bg-brand-600 flex items-center justify-center text-xl">&#x1F6E1;</div>
-        <h1 class="text-2xl font-bold text-white tracking-tight">Android Shell Protector</h1>
-      </div>
-      <p class="text-slate-400 text-sm">上传 APK &middot; 一键加固 &middot; 安全下载</p>
-    </div>
-
-    <!-- Main Card -->
-    <div class="bg-slate-800/50 backdrop-blur border border-slate-700/40 rounded-2xl shadow-2xl overflow-hidden">
-
-      <!-- Upload Zone -->
-      <div id="section-upload" class="p-8">
-        <div id="drop-zone"
-             class="border-2 border-dashed border-slate-600 rounded-xl p-10 text-center cursor-pointer
-                    hover:border-brand-500 hover:bg-brand-500/5 transition-all duration-200">
-          <div class="text-4xl mb-3 opacity-70">&#x1F4F1;</div>
-          <p class="text-white font-medium mb-1">拖拽 APK 文件到此处</p>
-          <p class="text-slate-400 text-sm">或 <span class="text-brand-500 underline">点击选择文件</span></p>
-          <input id="file-input" type="file" accept=".apk" class="hidden">
-        </div>
-        <p id="upload-error" class="text-red-400 text-sm mt-3 hidden"></p>
-      </div>
-
-      <!-- Progress Section -->
-      <div id="section-progress" class="p-8 hidden">
-        <div class="flex items-center gap-3 mb-4">
-          <div class="w-8 h-8 rounded-lg bg-brand-600/20 flex items-center justify-center">
-            <svg class="w-4 h-4 text-brand-500 animate-spin" fill="none" viewBox="0 0 24 24">
-              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
-            </svg>
-          </div>
+    <!-- ═══ Left Sidebar ═══ -->
+    <aside class="w-56 shrink-0 bg-slate-900/70 border-r border-slate-700/40 flex flex-col sticky top-0 h-screen">
+      <!-- Logo -->
+      <div class="px-5 py-5 border-b border-slate-700/30">
+        <div class="flex items-center gap-2.5">
+          <div class="w-9 h-9 rounded-xl bg-brand-600 flex items-center justify-center text-lg shrink-0">&#x1F6E1;</div>
           <div>
-            <p id="progress-filename" class="text-white text-sm font-medium"></p>
-            <p id="progress-message" class="text-slate-400 text-xs"></p>
+            <p class="text-white font-bold text-sm leading-tight">Shell Protector</p>
+            <p class="text-slate-500 text-[10px]">Android APK 加壳框架</p>
           </div>
         </div>
-        <div class="w-full bg-slate-700/50 rounded-full h-2.5 mb-2">
-          <div id="progress-bar" class="progress-bar bg-gradient-to-r from-blue-500 to-brand-500 h-2.5 rounded-full" style="width:0%"></div>
-        </div>
-        <p id="progress-percent" class="text-right text-slate-500 text-xs">0%</p>
-        <button id="btn-toggle-log"
-                class="mt-4 text-xs text-slate-400 hover:text-slate-200 flex items-center gap-1 transition-colors">
-          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/>
-          </svg>
-          查看加固日志
+      </div>
+
+      <!-- Navigation -->
+      <nav class="flex-1 py-3 px-2 space-y-0.5">
+        <button class="nav-item active w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-left" data-tab="harden">
+          <svg class="w-[18px] h-[18px] shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+          <span>APK 加固</span>
         </button>
-        <pre id="log-box" class="hidden mt-2 bg-slate-900/80 rounded-lg p-4 text-xs text-slate-300 max-h-48 overflow-y-auto leading-relaxed"></pre>
+        <button class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-left text-slate-400" data-tab="history">
+          <svg class="w-[18px] h-[18px] shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          <span>历史记录</span>
+        </button>
+        <button class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-left text-slate-400" data-tab="protection">
+          <svg class="w-[18px] h-[18px] shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+          <span>防护体系</span>
+        </button>
+        <button class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-left text-slate-400" data-tab="system">
+          <svg class="w-[18px] h-[18px] shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+          <span>系统状态</span>
+        </button>
+      </nav>
+
+      <!-- Bottom info -->
+      <div class="px-4 py-3 border-t border-slate-700/30 text-[10px] text-slate-600 leading-relaxed">
+        v2.0 — 基于主动反调试和<br>动态 DEX 加密解密机制
+      </div>
+    </aside>
+
+    <!-- ═══ Main Content ═══ -->
+    <main class="flex-1 min-w-0 overflow-y-auto h-screen">
+
+      <!-- ─── Tab 1: APK 加固 ─── -->
+      <div id="tab-harden" class="p-6 space-y-6">
+        <div class="flex items-center justify-between">
+          <h2 class="text-white text-lg font-bold">APK 加固</h2>
+          <p class="text-slate-500 text-xs">上传 APK · 一键加固 · 安全下载</p>
+        </div>
+
+        <div class="card max-w-2xl">
+          <!-- Upload Zone -->
+          <div id="section-upload" class="p-8">
+            <div id="drop-zone"
+                 class="border-2 border-dashed border-slate-600 rounded-xl p-10 text-center cursor-pointer
+                        hover:border-brand-500 hover:bg-brand-500/5 transition-all duration-200">
+              <div class="text-4xl mb-3 opacity-70">&#x1F4F1;</div>
+              <p class="text-white font-medium mb-1">拖拽 APK 文件到此处</p>
+              <p class="text-slate-400 text-sm">或 <span class="text-brand-500 underline">点击选择文件</span></p>
+              <input id="file-input" type="file" accept=".apk" class="hidden">
+            </div>
+            <p id="upload-error" class="text-red-400 text-sm mt-3 hidden"></p>
+          </div>
+          <!-- Progress -->
+          <div id="section-progress" class="p-8 hidden">
+            <div class="flex items-center gap-3 mb-4">
+              <div class="w-8 h-8 rounded-lg bg-brand-600/20 flex items-center justify-center">
+                <svg class="w-4 h-4 text-brand-500 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path></svg>
+              </div>
+              <div>
+                <p id="progress-filename" class="text-white text-sm font-medium"></p>
+                <p id="progress-message" class="text-slate-400 text-xs"></p>
+              </div>
+            </div>
+            <div class="w-full bg-slate-700/50 rounded-full h-2.5 mb-2">
+              <div id="progress-bar" class="progress-bar bg-gradient-to-r from-blue-500 to-brand-500 h-2.5 rounded-full" style="width:0%"></div>
+            </div>
+            <p id="progress-percent" class="text-right text-slate-500 text-xs">0%</p>
+            <button id="btn-toggle-log" class="mt-4 text-xs text-slate-400 hover:text-slate-200 flex items-center gap-1 transition-colors">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+              查看加固日志
+            </button>
+            <pre id="log-box" class="hidden mt-2 bg-slate-900/80 rounded-lg p-4 text-xs text-slate-300 max-h-48 overflow-y-auto leading-relaxed"></pre>
+          </div>
+          <!-- Result -->
+          <div id="section-result" class="p-8 hidden">
+            <div id="result-success" class="hidden text-center">
+              <div class="w-14 h-14 mx-auto mb-4 rounded-full bg-emerald-500/15 flex items-center justify-center text-2xl">&#x2705;</div>
+              <p class="text-white font-semibold mb-1">加固完成</p>
+              <p id="result-filename" class="text-slate-400 text-sm mb-5"></p>
+              <a id="btn-download" class="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-medium px-6 py-2.5 rounded-xl transition-colors shadow-lg shadow-emerald-600/20">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/></svg>
+                下载加固产物
+              </a>
+              <button id="btn-restart" class="block mx-auto mt-4 text-xs text-slate-400 hover:text-slate-200 transition-colors">&larr; 继续加固其他 APK</button>
+            </div>
+            <div id="result-fail" class="hidden text-center">
+              <div class="w-14 h-14 mx-auto mb-4 rounded-full bg-red-500/15 flex items-center justify-center text-2xl">&#x274C;</div>
+              <p class="text-white font-semibold mb-1">加固失败</p>
+              <p id="fail-message" class="text-red-400 text-sm mb-5"></p>
+              <button id="btn-retry" class="text-sm text-slate-400 hover:text-slate-200 transition-colors">&larr; 重新上传</button>
+            </div>
+          </div>
+        </div>
+
       </div>
 
-      <!-- Result Section -->
-      <div id="section-result" class="p-8 hidden">
-        <div id="result-success" class="hidden text-center">
-          <div class="w-14 h-14 mx-auto mb-4 rounded-full bg-emerald-500/15 flex items-center justify-center text-2xl">&#x2705;</div>
-          <p class="text-white font-semibold mb-1">加固完成</p>
-          <p id="result-filename" class="text-slate-400 text-sm mb-5"></p>
-          <a id="btn-download"
-             class="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-medium
-                    px-6 py-2.5 rounded-xl transition-colors shadow-lg shadow-emerald-600/20">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/>
-            </svg>
-            下载加固产物
-          </a>
-          <button id="btn-restart" class="block mx-auto mt-4 text-xs text-slate-400 hover:text-slate-200 transition-colors">
-            &larr; 继续加固其他 APK
-          </button>
+      <!-- ─── Tab 2: 历史记录 ─── -->
+      <div id="tab-history" class="p-6 space-y-6" style="display:none">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <h2 class="text-white text-lg font-bold">历史记录</h2>
+            <span id="history-count" class="text-slate-500 text-xs"></span>
+          </div>
+          <div class="flex items-center gap-2">
+            <button id="btn-refresh" class="text-xs text-slate-400 hover:text-slate-200 transition-colors flex items-center gap-1 px-2.5 py-1.5 rounded-lg hover:bg-slate-700/50 border border-slate-700/40">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+              刷新
+            </button>
+            <button id="btn-clear-all" class="text-xs text-red-400 hover:text-red-300 transition-colors flex items-center gap-1 px-2.5 py-1.5 rounded-lg hover:bg-red-500/10 border border-red-500/20">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+              一键清理
+            </button>
+          </div>
         </div>
-        <div id="result-fail" class="hidden text-center">
-          <div class="w-14 h-14 mx-auto mb-4 rounded-full bg-red-500/15 flex items-center justify-center text-2xl">&#x274C;</div>
-          <p class="text-white font-semibold mb-1">加固失败</p>
-          <p id="fail-message" class="text-red-400 text-sm mb-5"></p>
-          <button id="btn-retry" class="text-sm text-slate-400 hover:text-slate-200 transition-colors">&larr; 重新上传</button>
+
+        <div class="card">
+          <div id="history-list" class="overflow-y-auto">
+            <div id="history-empty" class="py-16 text-center">
+              <div class="text-3xl mb-3 opacity-50">&#x1F4CB;</div>
+              <p class="text-slate-500 text-sm">暂无加固记录</p>
+              <p class="text-slate-600 text-xs mt-1">上传 APK 进行加固后，记录将显示在这里</p>
+            </div>
+          </div>
         </div>
       </div>
 
-    </div>
-
-    <!-- History Section -->
-    <div class="mt-6 bg-slate-800/50 backdrop-blur border border-slate-700/40 rounded-2xl shadow-2xl overflow-hidden">
-      <div class="px-6 py-4 border-b border-slate-700/40 flex items-center justify-between">
-        <div class="flex items-center gap-2">
-          <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
-          </svg>
-          <span class="text-white text-sm font-medium">历史加固记录</span>
-          <span id="history-count" class="text-slate-500 text-xs ml-1"></span>
+      <!-- ─── Tab 3: 防护体系 ─── -->
+      <div id="tab-protection" class="p-6 space-y-6" style="display:none">
+        <div class="flex items-center justify-between">
+          <h2 class="text-white text-lg font-bold">防护体系</h2>
+          <p class="text-slate-500 text-xs">主动反调试 + 动态加密解密</p>
         </div>
-        <div class="flex items-center gap-2">
-          <button id="btn-refresh"
-                  class="text-xs text-slate-400 hover:text-slate-200 transition-colors flex items-center gap-1 px-2 py-1 rounded hover:bg-slate-700/50">
-            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-            </svg>
-            刷新
-          </button>
-          <button id="btn-clear-all"
-                  class="text-xs text-red-400 hover:text-red-300 transition-colors flex items-center gap-1 px-2 py-1 rounded hover:bg-red-500/10">
-            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-            </svg>
-            一键清理
-          </button>
+
+        <!-- Stats mini bar -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div class="card p-3 text-center"><p class="text-2xl font-bold text-white" id="stat-layers">—</p><p class="text-[11px] text-slate-400 mt-0.5">防护层数</p></div>
+          <div class="card p-3 text-center"><p class="text-2xl font-bold text-emerald-400" id="stat-lines">—</p><p class="text-[11px] text-slate-400 mt-0.5">核心代码行</p></div>
+          <div class="card p-3 text-center"><p class="text-2xl font-bold text-blue-400" id="stat-tasks">—</p><p class="text-[11px] text-slate-400 mt-0.5">加固任务</p></div>
+          <div class="card p-3 text-center"><p class="text-2xl font-bold text-amber-400" id="stat-abis">—</p><p class="text-[11px] text-slate-400 mt-0.5">支持架构</p></div>
+        </div>
+
+        <div class="grid grid-cols-1 xl:grid-cols-5 gap-6">
+          <!-- Anti-debug (3/5) -->
+          <div class="xl:col-span-3">
+            <div class="card">
+              <div class="px-6 py-4 border-b border-slate-700/40 flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <svg class="w-5 h-5 text-red-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                  <span class="text-white font-semibold">主动反调试防护体系</span>
+                </div>
+                <span class="text-xs text-slate-500" id="debug-count"></span>
+              </div>
+              <div class="divide-y divide-slate-700/30 max-h-[600px] overflow-y-auto" id="debug-layers"></div>
+            </div>
+          </div>
+          <!-- Encryption (2/5) -->
+          <div class="xl:col-span-2">
+            <div class="card">
+              <div class="px-6 py-4 border-b border-slate-700/40 flex items-center gap-2">
+                <svg class="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+                <span class="text-white font-semibold">动态 DEX 加密解密</span>
+              </div>
+              <div class="p-5 space-y-3" id="enc-grid"></div>
+              <div class="px-5 pb-5">
+                <div class="bg-slate-900/60 rounded-xl p-4">
+                  <p class="text-xs text-slate-500 mb-2 font-medium">密文结构</p>
+                  <div class="flex items-center gap-0 text-xs font-mono">
+                    <div class="bg-blue-500/20 text-blue-300 border border-blue-500/30 rounded-l-lg px-2.5 py-2 text-center">IV<br><span class="text-[10px] text-blue-400">16B</span></div>
+                    <div class="bg-brand-500/20 text-brand-400 border-y border-brand-500/30 px-3 py-2 text-center flex-1">AES-CBC 密文<br><span class="text-[10px] text-brand-300">可变</span></div>
+                    <div class="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-r-lg px-2.5 py-2 text-center">HMAC<br><span class="text-[10px] text-emerald-400">32B</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
-      <div id="history-list" class="max-h-80 overflow-y-auto">
-        <div id="history-empty" class="py-10 text-center text-slate-500 text-sm">暂无加固记录</div>
-      </div>
-    </div>
 
-    <p class="text-center text-slate-600 text-xs mt-6 mb-4">Android Shell Protector &mdash; 安全研究与学习用途</p>
+      <!-- ─── Tab 3: 系统状态 ─── -->
+      <div id="tab-system" class="p-6 space-y-6" style="display:none">
+        <div class="flex items-center justify-between">
+          <h2 class="text-white text-lg font-bold">系统状态</h2>
+          <p class="text-slate-500 text-xs">组件 · 工具链 · 源码</p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+          <!-- Components -->
+          <div class="card">
+            <div class="px-5 py-3.5 border-b border-slate-700/40 flex items-center gap-2">
+              <svg class="w-4 h-4 text-brand-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/></svg>
+              <span class="text-white text-sm font-semibold">组件状态</span>
+            </div>
+            <div class="p-4 space-y-3" id="component-list"></div>
+          </div>
+          <!-- Tools -->
+          <div class="card">
+            <div class="px-5 py-3.5 border-b border-slate-700/40 flex items-center gap-2">
+              <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+              <span class="text-white text-sm font-semibold">构建工具</span>
+            </div>
+            <div class="p-4 space-y-2" id="tools-list"></div>
+          </div>
+          <!-- Native -->
+          <div class="card">
+            <div class="px-5 py-3.5 border-b border-slate-700/40 flex items-center gap-2">
+              <svg class="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+              <span class="text-white text-sm font-semibold">Native 库 (libguard.so)</span>
+            </div>
+            <div class="p-4 space-y-2" id="native-list"></div>
+          </div>
+        </div>
+
+        <!-- Source files (full width) -->
+        <div class="card">
+          <div class="px-5 py-3.5 border-b border-slate-700/40 flex items-center gap-2">
+            <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+            <span class="text-white text-sm font-semibold">核心源文件</span>
+          </div>
+          <div class="p-5 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2" id="source-list"></div>
+        </div>
+      </div>
+
+    </main>
   </div>
 
-  <script src="/static/app.js"></script>
+  <script>
+  (function(){
+    var panels = document.querySelectorAll('[id^="tab-"]');
+    var btns = document.querySelectorAll('.nav-item[data-tab]');
+    btns.forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var name = btn.dataset.tab;
+        panels.forEach(function(p){ p.style.display = (p.id === 'tab-' + name) ? '' : 'none'; });
+        btns.forEach(function(b){
+          b.classList.toggle('active', b.dataset.tab === name);
+          b.classList.toggle('text-slate-400', b.dataset.tab !== name);
+        });
+      });
+    });
+  })();
+  </script>
+  <script src="/static/app.js?v=3"></script>
 </body>
 </html>

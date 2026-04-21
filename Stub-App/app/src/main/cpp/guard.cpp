@@ -154,20 +154,140 @@ static void aes_decrypt_block(const uint8_t in[16], uint8_t out[16],
     memcpy(out, state, 16);
 }
 
+// ╔════════════════════════════════════════════════════════════╗
+// ║  自实现 SHA-256 + HMAC-SHA256（密文完整性校验）              ║
+// ╚════════════════════════════════════════════════════════════╝
+
+static const uint32_t SHA256_K[64] = {
+    0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
+    0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+    0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+    0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+    0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
+    0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+    0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
+    0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2
+};
+
+#define SHA_ROTR(x,n) (((x)>>(n))|((x)<<(32-(n))))
+#define SHA_CH(x,y,z) (((x)&(y))^((~(x))&(z)))
+#define SHA_MAJ(x,y,z) (((x)&(y))^((x)&(z))^((y)&(z)))
+#define SHA_EP0(x) (SHA_ROTR(x,2)^SHA_ROTR(x,13)^SHA_ROTR(x,22))
+#define SHA_EP1(x) (SHA_ROTR(x,6)^SHA_ROTR(x,11)^SHA_ROTR(x,25))
+#define SHA_SIG0(x) (SHA_ROTR(x,7)^SHA_ROTR(x,18)^((x)>>3))
+#define SHA_SIG1(x) (SHA_ROTR(x,17)^SHA_ROTR(x,19)^((x)>>10))
+
+static void sha256(const uint8_t *data, size_t len, uint8_t out[32]) {
+    uint32_t h0=0x6a09e667, h1=0xbb67ae85, h2=0x3c6ef372, h3=0xa54ff53a;
+    uint32_t h4=0x510e527f, h5=0x9b05688c, h6=0x1f83d9ab, h7=0x5be0cd19;
+
+    size_t bitLen = len * 8;
+    size_t padLen = ((len % 64 < 56) ? 56 : 120) - (len % 64);
+    size_t totalLen = len + padLen + 8;
+
+    auto *msg = static_cast<uint8_t *>(calloc(totalLen, 1));
+    memcpy(msg, data, len);
+    msg[len] = 0x80;
+    for (int i = 0; i < 8; i++) msg[totalLen - 1 - i] = (uint8_t)(bitLen >> (i * 8));
+
+    for (size_t offset = 0; offset < totalLen; offset += 64) {
+        uint32_t w[64];
+        for (int i = 0; i < 16; i++)
+            w[i] = ((uint32_t)msg[offset+i*4]<<24)|((uint32_t)msg[offset+i*4+1]<<16)|
+                   ((uint32_t)msg[offset+i*4+2]<<8)|msg[offset+i*4+3];
+        for (int i = 16; i < 64; i++)
+            w[i] = SHA_SIG1(w[i-2]) + w[i-7] + SHA_SIG0(w[i-15]) + w[i-16];
+
+        uint32_t a=h0,b=h1,c=h2,d=h3,e=h4,f=h5,g=h6,h=h7;
+        for (int i = 0; i < 64; i++) {
+            uint32_t t1 = h + SHA_EP1(e) + SHA_CH(e,f,g) + SHA256_K[i] + w[i];
+            uint32_t t2 = SHA_EP0(a) + SHA_MAJ(a,b,c);
+            h=g; g=f; f=e; e=d+t1; d=c; c=b; b=a; a=t1+t2;
+        }
+        h0+=a; h1+=b; h2+=c; h3+=d; h4+=e; h5+=f; h6+=g; h7+=h;
+    }
+    free(msg);
+
+    uint32_t hh[8] = {h0,h1,h2,h3,h4,h5,h6,h7};
+    for (int i = 0; i < 8; i++) {
+        out[i*4]   = (uint8_t)(hh[i]>>24);
+        out[i*4+1] = (uint8_t)(hh[i]>>16);
+        out[i*4+2] = (uint8_t)(hh[i]>>8);
+        out[i*4+3] = (uint8_t)(hh[i]);
+    }
+}
+
+static void hmac_sha256(const uint8_t *key, int keyLen,
+                        const uint8_t *data, int dataLen,
+                        uint8_t out[32]) {
+    uint8_t kpad[64];
+    memset(kpad, 0, 64);
+    if (keyLen > 64) {
+        sha256(key, keyLen, kpad);
+    } else {
+        memcpy(kpad, key, keyLen);
+    }
+
+    uint8_t ipad[64], opad[64];
+    for (int i = 0; i < 64; i++) {
+        ipad[i] = kpad[i] ^ 0x36;
+        opad[i] = kpad[i] ^ 0x5c;
+    }
+
+    size_t innerLen = 64 + dataLen;
+    auto *inner = static_cast<uint8_t *>(malloc(innerLen));
+    memcpy(inner, ipad, 64);
+    memcpy(inner + 64, data, dataLen);
+    uint8_t innerHash[32];
+    sha256(inner, innerLen, innerHash);
+    memset(inner, 0, innerLen);
+    free(inner);
+
+    uint8_t outer[64 + 32];
+    memcpy(outer, opad, 64);
+    memcpy(outer + 64, innerHash, 32);
+    sha256(outer, 96, out);
+    memset(kpad, 0, 64);
+}
+
+static int constant_time_compare(const uint8_t *a, const uint8_t *b, int len) {
+    uint8_t result = 0;
+    for (int i = 0; i < len; i++) result |= a[i] ^ b[i];
+    return result == 0;
+}
+
 // ── AES-128-CBC 解密 + PKCS7 去填充 ────────────────────────
 
-static uint8_t *aes_cbc_decrypt(const uint8_t *data, int dataLen, int *outLen) {
-    if (dataLen < AES_BLOCK_SIZE * 2 || (dataLen - AES_BLOCK_SIZE) % AES_BLOCK_SIZE != 0) {
+static const int HMAC_SIZE = 32;
+
+static uint8_t *aes_cbc_decrypt(const uint8_t *data, int dataLen,
+                                const uint8_t *key, int *outLen) {
+    if (dataLen < AES_BLOCK_SIZE + AES_BLOCK_SIZE + HMAC_SIZE) {
+        return nullptr;
+    }
+
+    int payloadLen = dataLen - HMAC_SIZE;
+    const uint8_t *expectedHmac = data + payloadLen;
+
+    const uint8_t *useKey = key ? key : DEFAULT_KEY;
+
+    uint8_t computedHmac[32];
+    hmac_sha256(useKey, AES_KEY_SIZE, data, payloadLen, computedHmac);
+    if (!constant_time_compare(expectedHmac, computedHmac, HMAC_SIZE)) {
+        return nullptr;
+    }
+
+    if ((payloadLen - AES_BLOCK_SIZE) % AES_BLOCK_SIZE != 0) {
         return nullptr;
     }
 
     const uint8_t *iv         = data;
     const uint8_t *ciphertext = data + AES_BLOCK_SIZE;
-    int cipherLen             = dataLen - AES_BLOCK_SIZE;
+    int cipherLen             = payloadLen - AES_BLOCK_SIZE;
     int blockCount            = cipherLen / AES_BLOCK_SIZE;
 
     uint8_t roundKeys[176];
-    aes_key_expansion(DEFAULT_KEY, roundKeys);
+    aes_key_expansion(useKey, roundKeys);
 
     auto *plain = static_cast<uint8_t *>(malloc(cipherLen));
     if (!plain) return nullptr;
@@ -210,16 +330,25 @@ static uint8_t *aes_cbc_decrypt(const uint8_t *data, int dataLen, int *outLen) {
 // ╚════════════════════════════════════════════════════════════╝
 
 static jbyteArray nativeDecryptDex(JNIEnv *env, jobject /* thiz */,
-                                   jbyteArray jData) {
+                                   jbyteArray jData, jbyteArray jKey) {
     if (!jData) return nullptr;
 
     jint dataLen = env->GetArrayLength(jData);
     auto *data = reinterpret_cast<uint8_t *>(env->GetByteArrayElements(jData, nullptr));
 
+    uint8_t *keyBytes = nullptr;
+    if (jKey && env->GetArrayLength(jKey) == AES_KEY_SIZE) {
+        keyBytes = reinterpret_cast<uint8_t *>(env->GetByteArrayElements(jKey, nullptr));
+    }
+
     int plainLen = 0;
-    uint8_t *plain = aes_cbc_decrypt(data, dataLen, &plainLen);
+    uint8_t *plain = aes_cbc_decrypt(data, dataLen, keyBytes, &plainLen);
 
     env->ReleaseByteArrayElements(jData, reinterpret_cast<jbyte *>(data), JNI_ABORT);
+    if (keyBytes) {
+        memset(keyBytes, 0, AES_KEY_SIZE);
+        env->ReleaseByteArrayElements(jKey, reinterpret_cast<jbyte *>(keyBytes), 0);
+    }
 
     if (!plain) return nullptr;
 
@@ -236,11 +365,17 @@ static void nativeInitAntiDebug(JNIEnv * /* env */, jobject /* thiz */) {
     start_anti_debug();
 }
 
+static void nativeTimingCheck(JNIEnv *, jobject) {
+    timing_check_end();
+    timing_check_begin();
+}
+
 // ── JNI 动态注册 & JNI_OnLoad ───────────────────────────────
 
 static const JNINativeMethod METHODS[] = {
-    {"decryptDex",    "([B)[B", reinterpret_cast<void *>(nativeDecryptDex)},
-    {"initAntiDebug", "()V",    reinterpret_cast<void *>(nativeInitAntiDebug)}
+    {"decryptDex",    "([B[B)[B", reinterpret_cast<void *>(nativeDecryptDex)},
+    {"initAntiDebug", "()V",      reinterpret_cast<void *>(nativeInitAntiDebug)},
+    {"timingCheck",   "()V",      reinterpret_cast<void *>(nativeTimingCheck)}
 };
 
 static const char *CLASS_PROXY_APP = "com/shell/stub/ProxyApplication";

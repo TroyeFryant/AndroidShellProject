@@ -4,6 +4,7 @@ import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Base64;
 import java.util.Properties;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
@@ -28,6 +29,7 @@ public class Main {
     private static final String CONFIG_FILE_NAME     = "shell_config.properties";
 
     private static final String CONFIG_KEY_ORIGINAL_APP = "original_application";
+    private static final String CONFIG_KEY_DEX_KEY      = "dex_key";
 
     public static void main(String[] args) {
         if (args.length < 2) {
@@ -96,8 +98,11 @@ public class Main {
         byte[] dexBlob = packDexBlob(dexList);
         System.out.printf("[打包] 多 DEX blob          : %d bytes%n", dexBlob.length);
 
-        DexEncryptor encryptor = new DexEncryptor();
+        byte[] perApkKey = DexEncryptor.generateRandomKey();
+        DexEncryptor encryptor = new DexEncryptor(perApkKey);
         byte[] encryptedDex = encryptor.encrypt(dexBlob);
+        System.out.printf("[加密] 生成随机密钥         : %s%n",
+                Base64.getEncoder().encodeToString(perApkKey));
         System.out.printf("[加密] AES-128-CBC 加密完成 : %d bytes -> %d bytes%n",
                 dexBlob.length, encryptedDex.length);
 
@@ -120,7 +125,7 @@ public class Main {
         System.out.printf("[输出] %s : %d bytes%n", MODIFIED_MANIFEST, modifiedManifest.length);
 
         Path configPath = outDir.resolve(CONFIG_FILE_NAME);
-        writeConfig(configPath, originalApp);
+        writeConfig(configPath, originalApp, perApkKey);
         System.out.printf("[输出] %s  : 原始 Application = %s%n",
                 CONFIG_FILE_NAME, originalApp.isEmpty() ? "(默认)" : originalApp);
 
@@ -162,11 +167,12 @@ public class Main {
         }
     }
 
-    private static void writeConfig(Path path, String originalApp) throws IOException {
+    private static void writeConfig(Path path, String originalApp, byte[] dexKey) throws IOException {
         Properties props = new Properties();
         props.setProperty(CONFIG_KEY_ORIGINAL_APP, originalApp);
+        props.setProperty(CONFIG_KEY_DEX_KEY, Base64.getEncoder().encodeToString(dexKey));
         try (OutputStream os = Files.newOutputStream(path)) {
-            props.store(os, "Shell Protector Configuration — 壳程序配置");
+            props.store(os, "Shell Protector Configuration");
         }
     }
 }

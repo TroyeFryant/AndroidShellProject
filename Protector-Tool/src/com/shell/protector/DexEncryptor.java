@@ -1,6 +1,7 @@
 package com.shell.protector;
 
 import javax.crypto.Cipher;
+import javax.crypto.Mac;
 import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.file.Files;
@@ -25,6 +26,12 @@ public class DexEncryptor {
         this(DEFAULT_KEY);
     }
 
+    public static byte[] generateRandomKey() {
+        byte[] k = new byte[KEY_SIZE];
+        new SecureRandom().nextBytes(k);
+        return k;
+    }
+
     public DexEncryptor(byte[] key) {
         if (key == null || key.length != KEY_SIZE) {
             throw new IllegalArgumentException("AES-128 requires a 16-byte key");
@@ -32,8 +39,10 @@ public class DexEncryptor {
         this.key = key.clone();
     }
 
+    private static final int HMAC_SIZE = 32;
+
     /**
-     * 加密原始字节数据，返回格式: [IV(16 bytes)] + [encrypted data]
+     * 加密原始字节数据，返回格式: [IV(16)] + [ciphertext] + [HMAC-SHA256(32)]
      */
     public byte[] encrypt(byte[] plainData) throws Exception {
         byte[] iv = new byte[IV_SIZE];
@@ -46,31 +55,48 @@ public class DexEncryptor {
         cipher.init(Cipher.ENCRYPT_MODE, keySpec, ivSpec);
         byte[] encrypted = cipher.doFinal(plainData);
 
-        byte[] result = new byte[IV_SIZE + encrypted.length];
-        System.arraycopy(iv, 0, result, 0, IV_SIZE);
-        System.arraycopy(encrypted, 0, result, IV_SIZE, encrypted.length);
+        byte[] ivAndCipher = new byte[IV_SIZE + encrypted.length];
+        System.arraycopy(iv, 0, ivAndCipher, 0, IV_SIZE);
+        System.arraycopy(encrypted, 0, ivAndCipher, IV_SIZE, encrypted.length);
+
+        Mac mac = Mac.getInstance("HmacSHA256");
+        mac.init(new SecretKeySpec(key, "HmacSHA256"));
+        byte[] hmac = mac.doFinal(ivAndCipher);
+
+        byte[] result = new byte[ivAndCipher.length + HMAC_SIZE];
+        System.arraycopy(ivAndCipher, 0, result, 0, ivAndCipher.length);
+        System.arraycopy(hmac, 0, result, ivAndCipher.length, HMAC_SIZE);
         return result;
     }
 
     /**
-     * 解密由 {@link #encrypt} 产出的数据
+     * 解密由 {@link #encrypt} 产出的数据（含 HMAC 校验）
      */
     public byte[] decrypt(byte[] cipherData) throws Exception {
-        if (cipherData.length < IV_SIZE) {
+        if (cipherData.length < IV_SIZE + HMAC_SIZE) {
             throw new IllegalArgumentException("Cipher data too short");
         }
 
+        int payloadLen = cipherData.length - HMAC_SIZE;
+        byte[] payload = new byte[payloadLen];
+        System.arraycopy(cipherData, 0, payload, 0, payloadLen);
+        byte[] expectedHmac = new byte[HMAC_SIZE];
+        System.arraycopy(cipherData, payloadLen, expectedHmac, 0, HMAC_SIZE);
+
+        Mac mac = Mac.getInstance("HmacSHA256");
+        mac.init(new SecretKeySpec(key, "HmacSHA256"));
+        byte[] actualHmac = mac.doFinal(payload);
+        if (!java.security.MessageDigest.isEqual(expectedHmac, actualHmac)) {
+            throw new SecurityException("HMAC verification failed: data tampered");
+        }
+
         byte[] iv = new byte[IV_SIZE];
-        System.arraycopy(cipherData, 0, iv, 0, IV_SIZE);
-
-        byte[] encrypted = new byte[cipherData.length - IV_SIZE];
-        System.arraycopy(cipherData, IV_SIZE, encrypted, 0, encrypted.length);
-
-        SecretKeySpec keySpec = new SecretKeySpec(key, ALGORITHM);
-        IvParameterSpec ivSpec = new IvParameterSpec(iv);
+        System.arraycopy(payload, 0, iv, 0, IV_SIZE);
+        byte[] encrypted = new byte[payloadLen - IV_SIZE];
+        System.arraycopy(payload, IV_SIZE, encrypted, 0, encrypted.length);
 
         Cipher cipher = Cipher.getInstance(TRANSFORMATION);
-        cipher.init(Cipher.DECRYPT_MODE, keySpec, ivSpec);
+        cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(key, ALGORITHM), new IvParameterSpec(iv));
         return cipher.doFinal(encrypted);
     }
 
