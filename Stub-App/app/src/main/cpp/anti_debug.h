@@ -17,6 +17,10 @@ void timing_check_end();
 int  detect_hook();
 int  detect_root_environment();
 int  verify_code_integrity();
+int  detect_sandbox();
+int  detect_cloud_phone();
+int  detect_mount_anomaly();
+int  detect_art_hook();
 
 #ifdef __cplusplus
 }

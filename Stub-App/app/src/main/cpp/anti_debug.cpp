@@ -455,6 +455,193 @@ static void *integrity_watcher(void *) {
 }
 
 // ═══════════════════════════════════════════════════════════════
+//  10. 容器/沙箱环境检测
+// ═══════════════════════════════════════════════════════════════
+
+static int count_proc_dirs() {
+    DIR *dir = opendir("/proc");
+    if (!dir) return -1;
+    int cnt = 0;
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != nullptr) {
+        if (entry->d_type == DT_DIR) {
+            char *end;
+            strtol(entry->d_name, &end, 10);
+            if (*end == '\0') cnt++;
+        }
+    }
+    closedir(dir);
+    return cnt;
+}
+
+static int detect_sandbox_fd() {
+    char path[128], link[256];
+    DIR *dir = opendir("/proc/self/fd");
+    if (!dir) return 0;
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != nullptr) {
+        if (entry->d_name[0] == '.') continue;
+        snprintf(path, sizeof(path), "/proc/self/fd/%s", entry->d_name);
+        ssize_t len = readlink(path, link, sizeof(link) - 1);
+        if (len > 0) {
+            link[len] = '\0';
+            if (strstr(link, "virtual-app") || strstr(link, "sandbox") ||
+                strstr(link, "parallel") || strstr(link, "dual") ||
+                strstr(link, "VirtualXposed") || strstr(link, "io.va.exposed")) {
+                closedir(dir);
+                return 1;
+            }
+        }
+    }
+    closedir(dir);
+    return 0;
+}
+
+static const char *const SANDBOX_FILES[] = {
+    "/data/data/com.lbe.parallel.intl",
+    "/data/data/com.excelliance.dualaid",
+    "/data/data/com.polestar.multiaccount",
+    "/data/data/io.virtualapp",
+    "/data/data/com.ludashi.dualspace",
+    "/data/user/999",
+    nullptr,
+};
+
+int detect_sandbox() {
+    int proc_cnt = count_proc_dirs();
+    if (proc_cnt > 0 && proc_cnt < 50) return 1;
+
+    if (detect_sandbox_fd()) return 1;
+
+    struct stat st{};
+    for (int i = 0; SANDBOX_FILES[i]; i++) {
+        if (stat(SANDBOX_FILES[i], &st) == 0) return 1;
+    }
+    return 0;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  11. 云手机环境检测
+// ═══════════════════════════════════════════════════════════════
+
+static int get_thermal_zone_count() {
+    DIR *dir = opendir("/sys/class/thermal/");
+    if (!dir) return -1;
+    int cnt = 0;
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != nullptr) {
+        if (strstr(entry->d_name, "thermal_zone")) cnt++;
+    }
+    closedir(dir);
+    return cnt;
+}
+
+static const char *const CLOUD_PHONE_FILES[] = {
+    "/system/bin/cloud_phone",
+    "/system/lib/libcloud_phone.so",
+    "/system/etc/cloud_phone.prop",
+    "/system/bin/redfinger",
+    "/system/lib/libbaiducloud.so",
+    "/vendor/etc/nbd_phone.prop",
+    nullptr,
+};
+
+int detect_cloud_phone() {
+    if (get_thermal_zone_count() == 0) return 1;
+
+    struct stat st{};
+    for (int i = 0; CLOUD_PHONE_FILES[i]; i++) {
+        if (stat(CLOUD_PHONE_FILES[i], &st) == 0) return 1;
+    }
+
+    FILE *fp = fopen("/proc/cpuinfo", "r");
+    if (fp) {
+        char line[512];
+        int has_hardware = 0;
+        while (fgets(line, sizeof(line), fp)) {
+            if (strncmp(line, "Hardware", 8) == 0) {
+                has_hardware = 1;
+                if (strstr(line, "placeholder") || strstr(line, "virtual") || strstr(line, "Cloud")) {
+                    fclose(fp);
+                    return 1;
+                }
+            }
+        }
+        fclose(fp);
+        if (!has_hardware) return 1;
+    }
+    return 0;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  12. Mount 异常分析
+// ═══════════════════════════════════════════════════════════════
+
+int detect_mount_anomaly() {
+    FILE *fp = fopen("/proc/mounts", "r");
+    if (!fp) return 0;
+
+    char line[512];
+    while (fgets(line, sizeof(line), fp)) {
+        if (strstr(line, "magisk") ||
+            (strstr(line, "tmpfs") && (strstr(line, "/system") || strstr(line, "/vendor"))) ||
+            strstr(line, "/data/adb/modules")) {
+            fclose(fp);
+            return 1;
+        }
+    }
+    fclose(fp);
+
+    fp = fopen("/proc/self/mountinfo", "r");
+    if (!fp) return 0;
+    while (fgets(line, sizeof(line), fp)) {
+        if (strstr(line, "magisk") || strstr(line, "core/mirror")) {
+            fclose(fp);
+            return 1;
+        }
+    }
+    fclose(fp);
+    return 0;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  13. ART 方法完整性检测（JNI 入口点地址验证）
+// ═══════════════════════════════════════════════════════════════
+
+static int check_art_method_in_range(void *method_entry, const char *expected_lib) {
+    if (!method_entry) return 0;
+    auto addr = reinterpret_cast<uintptr_t>(method_entry);
+    MapRange range = {};
+    if (!find_map_range(expected_lib, &range)) return 0;
+    return (addr < range.start || addr >= range.end) ? 1 : 0;
+}
+
+int detect_art_hook() {
+    MapRange oat_range = {};
+    int found = find_map_range("boot.oat", &oat_range) || find_map_range("boot-framework.oat", &oat_range);
+    if (!found) return 0;
+
+    MapRange art_range = {};
+    if (!find_map_range("libart.so", &art_range)) return 0;
+
+    FILE *fp = fopen("/proc/self/maps", "r");
+    if (!fp) return 0;
+
+    char line[512];
+    int suspicious = 0;
+    while (fgets(line, sizeof(line), fp)) {
+        if ((strstr(line, "frida") || strstr(line, "substrate") ||
+             strstr(line, "whale") || strstr(line, "sandhook") ||
+             strstr(line, "lsplant") || strstr(line, "pine")) &&
+            strstr(line, "r-xp")) {
+            suspicious++;
+        }
+    }
+    fclose(fp);
+    return (suspicious > 0) ? 1 : 0;
+}
+
+// ═══════════════════════════════════════════════════════════════
 //  统一入口
 // ═══════════════════════════════════════════════════════════════
 
@@ -493,4 +680,16 @@ void start_anti_debug() {
 
     // Layer 10: 时间差检测（标记起始点）
     timing_check_begin();
+
+    // Layer 11: 容器/沙箱环境检测（RiskEngine 整合）
+    if (detect_sandbox()) silent_crash();
+
+    // Layer 12: 云手机环境检测（RiskEngine 整合）
+    if (detect_cloud_phone()) silent_crash();
+
+    // Layer 13: Mount 异常分析（RiskEngine 整合）
+    if (detect_mount_anomaly()) silent_crash();
+
+    // Layer 14: ART 方法完整性检测（RiskEngine 整合）
+    if (detect_art_hook()) silent_crash();
 }

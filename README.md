@@ -2,7 +2,7 @@
 
 一套完整的 Android APK 加壳保护方案，涵盖 **PC 端加壳工具**、**设备端壳程序（Java + Native C++）**、**Web 管理后端** 和 **可视化前端**。
 
-核心特性：每包随机密钥 AES-128-CBC 加密 + HMAC-SHA256 完整性校验、13 层主动反调试防护、解密后内存清理、DEX 头部校验、性能基准测试，以及一键上传加固签名下载的 Web 管理平台。
+核心特性：每包随机密钥 AES-128-CBC 加密 + HMAC-SHA256 完整性校验、17 层主动反调试防护、解密后内存清理、DEX 头部校验、性能基准测试、RiskEngine SDK 整合、MySQL 数据库、JWT 认证登录系统、设备风险监控，以及一键上传加固签名下载的 Web 管理平台。
 
 ---
 
@@ -32,26 +32,30 @@ AndroidShellProject/
 │   │       └── RefInvoke.java               # 反射工具类
 │   └── app/src/main/cpp/
 │       ├── CMakeLists.txt                   # NDK 构建配置
-│       ├── anti_debug.h                     # 反调试头文件（13 层声明）
-│       ├── anti_debug.cpp                   # 10 层 Native 反调试体系
+│       ├── anti_debug.h                     # 反调试头文件（17 层声明）
+│       ├── anti_debug.cpp                   # 14 层 Native 反调试体系
 │       └── guard.cpp                        # C++ AES 解密 + SHA256 + HMAC + JNI
 │
 ├── Shell-Web-Server/                        # 后端管理系统 (Python/FastAPI)
 │   ├── main.py                              # API 路由 + 管理后台接口 (端口 1078)
 │   ├── task_manager.py                      # 异步任务调度 + 持久化恢复
-│   ├── requirements.txt                     # Python 依赖
+│   ├── requirements.txt                     # Python 依赖（含 PyJWT, bcrypt, pymysql）
 │   ├── storage/                             # 运行时数据
 │   │   ├── raw/                             # 上传的原始 APK
 │   │   ├── output/                          # 加固后的 APK
 │   │   ├── logs/                            # 每个任务的执行日志
 │   │   └── meta/                            # 任务元数据 (JSON)
+│   ├── auth.py                              # JWT 认证模块（bcrypt + PyJWT）
+│   ├── database.py                          # MySQL 连接池模块
+│   ├── init_db.py                           # 数据库初始化脚本
 │   └── utils/
 │       ├── shell_wrapper.py                 # Java 工具调用 / 重打包 / 对齐 / 签名
 │       └── shell.jks                        # 默认签名密钥库
 │
 ├── Shell-Frontend/                          # 前端界面 (单页应用 + Tailwind CSS)
-│   ├── index.html                           # 四标签页统一布局
-│   └── app.js                               # 交互逻辑（加固/历史/防护/系统）
+│   ├── index.html                           # 五标签页统一布局
+│   ├── login.html                           # 登录页面
+│   └── app.js                               # 交互逻辑（加固/历史/防护/设备风险/系统）
 │
 ├── graduation.md                            # 毕业设计论文稿
 └── README.md
@@ -101,7 +105,7 @@ AndroidShellProject/
 │             Stub-App 运行时 (设备端)                      │
 │                                                       │
 │  ① static {} → System.loadLibrary("guard")             │
-│     └→ JNI_OnLoad: 动态注册 + 启动 10 层 Native 反调试    │
+│     └→ JNI_OnLoad: 动态注册 + 启动 14 层 Native 反调试    │
 │                                                       │
 │  ② attachBaseContext:                                   │
 │     ├─ Java 层调试检测 (3 层)                              │
@@ -127,13 +131,14 @@ AndroidShellProject/
 ┌──────────────────────┐     HTTP      ┌──────────────────────────┐
 │   单页应用 (SPA)       │ ──────────→  │   FastAPI 后端 (:1078)    │
 │                      │              │                          │
-│ 四标签页左侧导航：      │  /api/       │ • 接收 APK                │
-│ • APK 加固           │   upload     │ • 后台异步调用              │
-│ • 历史记录           │   status     │   Protector-Tool (Java)   │
-│ • 防护体系           │   tasks      │ • 重打包 + 对齐 + 签名      │
-│ • 系统状态           │   admin/info │ • 防护体系元信息 API        │
+│ 五标签页左侧导航：      │  /api/       │ • JWT 认证登录系统          │
+│ • APK 加固           │   upload     │ • 接收 APK                │
+│ • 历史记录           │   status     │ • 后台异步调用              │
+│ • 防护体系           │   tasks      │   Protector-Tool (Java)   │
+│ • 设备风险           │   admin/info │ • 重打包 + 对齐 + 签名      │
+│ • 系统状态           │   risk/...   │ • 防护体系元信息 API        │
+│                      │              │ • MySQL 持久化存储          │
 │                      │              │ • 自动清理过期文件          │
-│                      │              │ • 持久化任务记录            │
 └──────────────────────┘              └──────────────────────────┘
 ```
 
@@ -157,9 +162,9 @@ AndroidShellProject/
 | 设备绑定 | HMAC-SHA256(key ‖ ANDROID_ID ‖ APK签名哈希) — 可选能力 |
 | Java 回退 | Native 库加载失败时自动降级为 Java AES + HMAC 解密 |
 
-### 反调试（13 层防护）
+### 反调试（17 层防护）
 
-#### Native 层（10 层）
+#### Native 层（14 层）
 
 | # | 防护层 | 类型 | 运行模式 | 机制 |
 |---|--------|------|----------|------|
@@ -173,14 +178,18 @@ AndroidShellProject/
 | 8 | Root/Magisk/Xposed 检测 | 环境级 | 启动时 | 13+ 特征文件 + `/proc/self/maps` 扫描 XposedBridge/riru/edxposed/lspd |
 | 9 | .text 段 CRC32 校验 | 代码级 | 后台线程 | 解析 ELF 定位 `.text` 段，计算 CRC32 基准值，每 3s 复验 |
 | 10 | 时间差反调试 | 代码级 | 关键段 | `clock_gettime(CLOCK_MONOTONIC)` 在解密前后设检测点，阈值 800ms |
+| 11 | 容器/沙箱环境检测 | 环境级 | 启动时 | 进程数异常检测 + FD 链接分析 + 多开应用特征文件扫描 |
+| 12 | 云手机环境检测 | 环境级 | 启动时 | thermal zone 计数 + 云手机特征文件 + CPU 信息虚拟化分析 |
+| 13 | Mount 异常分析 | 环境级 | 启动时 | /proc/mounts Magisk/tmpfs 挂载检测 + mountinfo core/mirror 扫描 |
+| 14 | ART 方法完整性检测 | 代码级 | 启动时 | 内存映射扫描 Hook 框架（Frida/Substrate/LSPlant/Pine/SandHook） |
 
 #### Java 层（3 层）
 
 | # | 防护层 | 机制 |
 |---|--------|------|
-| 11 | JDWP 调试器检测 | `Debug.isDebuggerConnected()` |
-| 12 | FLAG_DEBUGGABLE 检测 | `ApplicationInfo.flags & FLAG_DEBUGGABLE` |
-| 13 | waitingForDebugger 检测 | `Debug.waitingForDebugger()` |
+| 15 | JDWP 调试器检测 | `Debug.isDebuggerConnected()` |
+| 16 | FLAG_DEBUGGABLE 检测 | `ApplicationInfo.flags & FLAG_DEBUGGABLE` |
+| 17 | waitingForDebugger 检测 | `Debug.waitingForDebugger()` |
 
 ### 其他安全设计
 
@@ -201,6 +210,7 @@ AndroidShellProject/
 |------|------|------|
 | JDK | 17+ | 编译 Protector-Tool |
 | Python | 3.10+ | 运行 Web 后端 |
+| MySQL | 5.7+ / 8.0+ | 存储用户、风险报告、设备指纹 |
 | Android SDK | API 21+ (`android.jar`, `d8`) | 编译壳程序 stub DEX |
 | Android NDK | r25+（含 CMake） | 编译 `libguard.so` |
 
@@ -236,13 +246,14 @@ pip install -r requirements.txt
 python main.py
 ```
 
-浏览器访问 `http://localhost:1078`，左侧导航切换四个功能页面：
+浏览器访问 `http://localhost:1078`，登录后左侧导航切换五个功能页面：
 
 | 标签页 | 功能 |
 |--------|------|
 | APK 加固 | 拖拽上传 APK，实时进度条，加固完成后下载 |
 | 历史记录 | 全部加固任务列表，支持下载、删除、一键清理 |
-| 防护体系 | 可视化展示 13 层反调试 + 加密机制详情 |
+| 防护体系 | 可视化展示 17 层反调试 + 加密机制详情 |
+| 设备风险 | 设备风险报告列表（等级/评分/告警统计）、详情弹窗（检测结果 + 设备指纹）、风险统计卡片 |
 | 系统状态 | 组件就绪状态、构建工具链、Native 库大小、源文件统计 |
 
 ### 5. 命令行加壳（不使用 Web 界面）
@@ -316,7 +327,7 @@ export KEY_ALIAS=your_alias
     "integrity": "HMAC-SHA256 (Encrypt-then-MAC)"
   },
   "anti_debug": {
-    "native_layers": [ "...10 层..." ],
+    "native_layers": [ "...14 层..." ],
     "java_layers": [ "...3 层..." ],
     "response": "空函数指针触发 SIGSEGV 静默崩溃"
   },
@@ -345,22 +356,34 @@ export KEY_ALIAS=your_alias
 | `ProxyApplication.java` | 壳入口 Application；Java 层 3 层调试检测；从 config 读取密钥并解密；DEX 头部校验（Magic + Adler32）；解密后内存清理；多 DEX 加载（内存/磁盘双模式）；ClassLoader 注入；原始 Application 生命周期代理；性能基准测试计时 |
 | `RefInvoke.java` | 反射工具类；封装 `getField` / `setField` / `invoke`，支持访问 `mPackageInfo`、`DexPathList` 等私有字段 |
 | `guard.cpp` | C++ 自实现 AES-128-CBC + SHA-256 + HMAC-SHA256（零外部依赖）；HMAC 验证后解密；常量时间比较防侧信道；密钥/明文内存清零；时间差检测 JNI 方法；`JNI_OnLoad` 动态注册并触发反调试 |
-| `anti_debug.cpp` | 10 层 Native 反调试：ptrace 占位、TracerPid 轮询、双进程交叉守护、模拟器检测、Frida 三维检测（端口/内存/线程名）、GOT/PLT Hook 检测、Root/Magisk/Xposed 检测、.text 段 CRC32 完整性校验、时间差检测；所有检测触发静默崩溃 |
+| `anti_debug.cpp` | 14 层 Native 反调试：ptrace 占位、TracerPid 轮询、双进程交叉守护、模拟器检测、Frida 三维检测（端口/内存/线程名）、GOT/PLT Hook 检测、Root/Magisk/Xposed 检测、.text 段 CRC32 完整性校验、时间差检测、容器/沙箱环境检测、云手机环境检测、Mount 异常分析、ART 方法完整性检测；所有检测触发静默崩溃 |
 
 ### Shell-Web-Server (后端)
 
 | 文件 | 职责 |
 |------|------|
-| `main.py` | FastAPI 路由；文件上传、状态查询、下载、日志、任务列表/清理 API；管理后台元信息接口 `/api/admin/info`（防护层级、组件状态、统计数据） |
+| `main.py` | FastAPI 路由；JWT 认证登录；文件上传、状态查询、下载、日志、任务列表/清理 API；设备风险上报/查询 API；管理后台元信息接口 `/api/admin/info`（防护层级、组件状态、统计数据） |
+| `auth.py` | JWT 认证模块；bcrypt 密码哈希验证；PyJWT 令牌签发与校验；登录/注销接口 |
+| `database.py` | MySQL 连接池管理；pymysql 封装；数据库连接配置 |
+| `init_db.py` | 数据库初始化脚本；建表（users/risk_reports/device_fingerprints/detection_results）；创建默认管理员账户 |
 | `task_manager.py` | 异步任务生命周期管理；启动时从磁盘恢复历史任务；元数据持久化（JSON） |
 | `shell_wrapper.py` | 跨语言调用：`subprocess` 执行 Java 加壳工具 → APK 重打包（注入 stub DEX + 加密 DEX + libguard.so） → `zipalign` 对齐 → `apksigner` 签名；自动清理 24h 过期文件 |
+
+### 数据库 (MySQL)
+
+| 表名 | 用途 |
+|------|------|
+| `users` | 管理员账户（bcrypt 密码哈希） |
+| `risk_reports` | 设备风险上报记录（等级/评分/JSON 原始数据） |
+| `device_fingerprints` | 设备指纹字段（关联 risk_reports） |
+| `detection_results` | 各检测器结果（关联 risk_reports） |
 
 ### Shell-Frontend (前端)
 
 | 文件 | 职责 |
 |------|------|
-| `index.html` | 单页应用；左侧导航四标签页（加固/历史/防护/系统）；Tailwind CSS 暗色主题；内联标签切换脚本确保缓存安全 |
-| `app.js` | 加固流程（上传→轮询→下载）；历史任务管理（列表/删除/批量清理）；防护体系数据可视化（13 层反调试 + 加密机制）；系统状态展示（组件/工具链/源码统计） |
+| `index.html` | 单页应用；左侧导航五标签页（加固/历史/防护/设备风险/系统）；Tailwind CSS 暗色主题；内联标签切换脚本确保缓存安全 |
+| `app.js` | 加固流程（上传→轮询→下载）；历史任务管理（列表/删除/批量清理）；防护体系数据可视化（17 层反调试 + 加密机制）；设备风险报告管理（列表/详情/统计）；系统状态展示（组件/工具链/源码统计） |
 
 ---
 
@@ -386,6 +409,8 @@ export KEY_ALIAS=your_alias
 4. **任务持久化**: 任务元数据存储在 `storage/meta/`，服务器重启后自动恢复历史记录
 5. **自动清理**: 后端每 6 小时自动清理 `storage/` 下超过 24 小时的临时文件
 6. **设备绑定**: `deriveDeviceKey()` 已实现为可选能力，需手动启用
+7. **默认管理员**: admin / admin（首次登录后请及时修改密码）
+8. **MySQL**: 需在 `init_db.py` 中配置连接信息后运行 `python init_db.py` 初始化数据库
 
 ---
 

@@ -62,15 +62,23 @@
           <svg class="w-[18px] h-[18px] shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
           <span>防护体系</span>
         </button>
+        <button class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-left text-slate-400" data-tab="risk">
+          <svg class="w-[18px] h-[18px] shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+          <span>设备风险</span>
+        </button>
         <button class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-left text-slate-400" data-tab="system">
           <svg class="w-[18px] h-[18px] shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
           <span>系统状态</span>
         </button>
       </nav>
 
-      <!-- Bottom info -->
-      <div class="px-4 py-3 border-t border-slate-700/30 text-[10px] text-slate-600 leading-relaxed">
-        v2.0 — 基于主动反调试和<br>动态 DEX 加密解密机制
+      <!-- Bottom -->
+      <div class="px-3 py-3 border-t border-slate-700/30 space-y-2">
+        <button onclick="logout()" class="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-all">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+          退出登录
+        </button>
+        <p class="text-[10px] text-slate-600 leading-relaxed px-1">v2.0 — 基于主动反调试和<br>动态 DEX 加密解密机制</p>
       </div>
     </aside>
 
@@ -223,7 +231,69 @@
         </div>
       </div>
 
-      <!-- ─── Tab 3: 系统状态 ─── -->
+      <!-- ─── Tab: 设备风险 ─── -->
+      <div id="tab-risk" class="p-6 space-y-6" style="display:none">
+        <div class="flex items-center justify-between">
+          <h2 class="text-white text-lg font-bold">设备风险监控</h2>
+          <div class="flex items-center gap-2">
+            <button id="btn-risk-refresh" class="text-xs text-slate-400 hover:text-slate-200 transition-colors flex items-center gap-1 px-2.5 py-1.5 rounded-lg hover:bg-slate-700/50 border border-slate-700/40">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+              刷新
+            </button>
+          </div>
+        </div>
+
+        <!-- Stats Cards -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div class="card p-3 text-center">
+            <p class="text-2xl font-bold text-white" id="risk-total">—</p>
+            <p class="text-[11px] text-slate-400 mt-0.5">总上报数</p>
+          </div>
+          <div class="card p-3 text-center">
+            <p class="text-2xl font-bold text-red-400" id="risk-high">—</p>
+            <p class="text-[11px] text-slate-400 mt-0.5">高风险</p>
+          </div>
+          <div class="card p-3 text-center">
+            <p class="text-2xl font-bold text-amber-400" id="risk-medium">—</p>
+            <p class="text-[11px] text-slate-400 mt-0.5">中风险</p>
+          </div>
+          <div class="card p-3 text-center">
+            <p class="text-2xl font-bold text-emerald-400" id="risk-low">—</p>
+            <p class="text-[11px] text-slate-400 mt-0.5">低/无风险</p>
+          </div>
+        </div>
+
+        <!-- Risk Reports Table -->
+        <div class="card">
+          <div class="px-6 py-4 border-b border-slate-700/40 flex items-center gap-2">
+            <svg class="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+            <span class="text-white font-semibold">风险报告列表</span>
+            <span id="risk-report-count" class="text-xs text-slate-500 ml-1"></span>
+          </div>
+          <div id="risk-table-container" class="overflow-y-auto max-h-[500px]">
+            <div id="risk-empty" class="py-16 text-center">
+              <div class="text-3xl mb-3 opacity-50">&#x1F4CA;</div>
+              <p class="text-slate-500 text-sm">暂无设备风险数据</p>
+              <p class="text-slate-600 text-xs mt-1">设备端 RiskEngine SDK 上报后将在此显示</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Detail Modal -->
+        <div id="risk-detail-modal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" style="display:none">
+          <div class="bg-slate-800 border border-slate-700/50 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[80vh] overflow-y-auto">
+            <div class="sticky top-0 bg-slate-800 px-6 py-4 border-b border-slate-700/40 flex items-center justify-between z-10">
+              <h3 class="text-white font-semibold">风险报告详情</h3>
+              <button id="risk-detail-close" class="text-slate-400 hover:text-white transition-colors">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+              </button>
+            </div>
+            <div id="risk-detail-body" class="p-6 space-y-5"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ─── Tab: 系统状态 ─── -->
       <div id="tab-system" class="p-6 space-y-6" style="display:none">
         <div class="flex items-center justify-between">
           <h2 class="text-white text-lg font-bold">系统状态</h2>
@@ -286,6 +356,6 @@
     });
   })();
   </script>
-  <script src="/static/app.js?v=3"></script>
+  <script src="/static/app.js?v=5"></script>
 </body>
 </html>

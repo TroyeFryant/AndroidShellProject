@@ -2,3 +2,6 @@ fastapi
 uvicorn[standard]
 python-multipart
 aiofiles
+PyJWT
+bcrypt
+pymysql

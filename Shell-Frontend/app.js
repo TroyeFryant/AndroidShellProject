@@ -8,10 +8,33 @@ const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
 
 // ═══════════════════════════════════════════════════════════════
+//  认证 Token 管理
+// ═══════════════════════════════════════════════════════════════
+
+function getToken() { return localStorage.getItem("token"); }
+
+function authHeaders() {
+  const t = getToken();
+  return t ? { "Authorization": "Bearer " + t } : {};
+}
+
+async function authFetch(url, opts = {}) {
+  opts.headers = Object.assign({}, opts.headers || {}, authHeaders());
+  const res = await fetch(url, opts);
+  if (res.status === 401) { localStorage.removeItem("token"); window.location.href = "/login"; throw new Error("未授权"); }
+  return res;
+}
+
+function logout() {
+  localStorage.removeItem("token");
+  window.location.href = "/login";
+}
+
+// ═══════════════════════════════════════════════════════════════
 //  标签页切换
 // ═══════════════════════════════════════════════════════════════
 
-const tabPanels = { harden: $("#tab-harden"), history: $("#tab-history"), protection: $("#tab-protection"), system: $("#tab-system") };
+const tabPanels = { harden: $("#tab-harden"), history: $("#tab-history"), protection: $("#tab-protection"), risk: $("#tab-risk"), system: $("#tab-system") };
 const navButtons = $$(".nav-item[data-tab]");
 let adminLoaded = false;
 
@@ -26,6 +49,7 @@ function switchTab(name) {
     btn.classList.toggle("text-slate-400", !active);
   });
   if (name === "history") loadHistory();
+  if (name === "risk") loadRiskData();
   if ((name === "protection" || name === "system") && !adminLoaded) {
     adminLoaded = true;
     loadAdminData();
@@ -112,7 +136,7 @@ async function uploadFile(file) {
   const form = new FormData();
   form.append("file", file);
   try {
-    const res = await fetch(`${API}/api/upload`, { method: "POST", body: form });
+    const res = await authFetch(`${API}/api/upload`, { method: "POST", body: form });
     if (!res.ok) { const err = await res.json(); throw new Error(err.detail || "上传失败"); }
     const data = await res.json();
     taskId = data.task_id;
@@ -129,7 +153,7 @@ function startPolling() { poll(); pollTimer = setInterval(poll, POLL_INTERVAL); 
 async function poll() {
   if (!taskId) return;
   try {
-    const res = await fetch(`${API}/api/status/${taskId}`);
+    const res = await authFetch(`${API}/api/status/${taskId}`);
     const data = await res.json();
     const pct = data.progress || 0;
     dom.progressBar.style.width = pct + "%";
@@ -147,7 +171,7 @@ async function poll() {
 async function fetchLogs() {
   if (!taskId) return;
   try {
-    const res = await fetch(`${API}/api/logs/${taskId}`);
+    const res = await authFetch(`${API}/api/logs/${taskId}`);
     const data = await res.json();
     if (data.logs) { dom.logBox.textContent = data.logs; dom.logBox.scrollTop = dom.logBox.scrollHeight; }
   } catch (_) {}
@@ -155,7 +179,22 @@ async function fetchLogs() {
 
 function showCompleted(data) {
   dom.resultFilename.textContent = data.filename;
-  dom.btnDownload.href = `${API}/api/download/${taskId}`;
+  dom.btnDownload.href = "#";
+  dom.btnDownload.onclick = async (e) => {
+    e.preventDefault();
+    try {
+      const res = await authFetch(`${API}/api/download/${taskId}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `protected_${data.filename}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (_) {}
+  };
   dom.resultSuccess.classList.remove("hidden");
   dom.resultFail.classList.add("hidden");
   showSection("result");
@@ -188,7 +227,7 @@ function statusBadge(status) {
 
 async function loadHistory() {
   try {
-    const res = await fetch(`${API}/api/tasks`);
+    const res = await authFetch(`${API}/api/tasks`);
     const data = await res.json();
     const tasks = data.tasks || [];
     dom.historyCount.textContent = tasks.length > 0 ? `(${tasks.length})` : "";
@@ -204,7 +243,7 @@ async function loadHistory() {
       <th class="text-right py-2 px-4 font-medium">操作</th></tr></thead><tbody>`;
     for (const t of tasks) {
       const a = [];
-      if (t.status === "completed" && t.has_output) a.push(`<a href="${API}/api/download/${t.task_id}" class="text-emerald-400 hover:text-emerald-300 transition-colors">下载</a>`);
+      if (t.status === "completed" && t.has_output) a.push(`<button onclick="downloadTask('${t.task_id}','${t.filename}')" class="text-emerald-400 hover:text-emerald-300 transition-colors">下载</button>`);
       a.push(`<button onclick="deleteTask('${t.task_id}')" class="text-red-400/70 hover:text-red-300 transition-colors">删除</button>`);
       html += `<tr class="task-row border-b border-slate-700/20">
         <td class="py-2.5 px-4 text-slate-300 truncate max-w-[180px]" title="${t.filename}">${t.filename}</td>
@@ -219,13 +258,28 @@ async function loadHistory() {
   } catch (_) {}
 }
 
+async function downloadTask(tid, filename) {
+  try {
+    const res = await authFetch(`${API}/api/download/${tid}`);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `protected_${filename}`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch (_) {}
+}
+
 async function deleteTask(tid) {
   if (!confirm("确定删除此任务？")) return;
-  try { await fetch(`${API}/api/tasks/${tid}`, { method: "DELETE" }); loadHistory(); } catch (_) {}
+  try { await authFetch(`${API}/api/tasks/${tid}`, { method: "DELETE" }); loadHistory(); } catch (_) {}
 }
 async function clearAllTasks() {
   if (!confirm("确定清理所有历史记录？此操作不可撤销。")) return;
-  try { await fetch(`${API}/api/tasks`, { method: "DELETE" }); loadHistory(); } catch (_) {}
+  try { await authFetch(`${API}/api/tasks`, { method: "DELETE" }); loadHistory(); } catch (_) {}
 }
 
 // ── 事件绑定 ──
@@ -249,7 +303,7 @@ loadHistory();
 
 async function loadAdminData() {
   try {
-    const res = await fetch(`${API}/api/admin/info`);
+    const res = await authFetch(`${API}/api/admin/info`);
     const d = await res.json();
 
     const allLayers = [...d.anti_debug.native_layers, ...d.anti_debug.java_layers];
@@ -351,3 +405,199 @@ async function loadAdminData() {
     console.error("Failed to load admin data:", e);
   }
 }
+
+// ═══════════════════════════════════════════════════════════════
+//  设备风险模块
+// ═══════════════════════════════════════════════════════════════
+
+function riskBadge(level) {
+  const m = {
+    CRITICAL: { t:"严重", c:"bg-red-600/20 text-red-300 border-red-500/30" },
+    HIGH:     { t:"高危", c:"bg-red-500/15 text-red-400 border-red-500/20" },
+    MEDIUM:   { t:"中危", c:"bg-amber-500/15 text-amber-400 border-amber-500/20" },
+    LOW:      { t:"低危", c:"bg-blue-500/15 text-blue-400 border-blue-500/20" },
+    NONE:     { t:"安全", c:"bg-emerald-500/15 text-emerald-400 border-emerald-500/20" },
+  };
+  const s = m[level] || { t: level || "未知", c:"bg-slate-500/15 text-slate-400 border-slate-500/20" };
+  return `<span class="inline-block px-2 py-0.5 rounded border text-xs font-medium ${s.c}">${s.t}</span>`;
+}
+
+function scoreBar(score, max) {
+  const pct = max > 0 ? Math.min(100, (score / max) * 100) : 0;
+  let color = "from-emerald-500 to-emerald-400";
+  if (pct > 60) color = "from-red-500 to-red-400";
+  else if (pct > 30) color = "from-amber-500 to-amber-400";
+  return `<div class="flex items-center gap-2 w-28">
+    <div class="flex-1 bg-slate-700/30 rounded-full h-1.5 overflow-hidden">
+      <div class="h-full rounded-full bg-gradient-to-r ${color}" style="width:${pct.toFixed(0)}%"></div>
+    </div>
+    <span class="text-xs text-slate-400">${score}/${max}</span>
+  </div>`;
+}
+
+async function loadRiskData() {
+  try {
+    const [statsRes, reportsRes] = await Promise.all([
+      authFetch(`${API}/api/risk/stats`),
+      authFetch(`${API}/api/risk/reports`),
+    ]);
+    const stats = await statsRes.json();
+    const reportsData = await reportsRes.json();
+    const reports = reportsData.reports || [];
+
+    $("#risk-total").textContent = stats.total;
+    $("#risk-high").textContent = stats.high;
+    $("#risk-medium").textContent = stats.medium;
+    $("#risk-low").textContent = stats.low;
+
+    const countEl = $("#risk-report-count");
+    if (countEl) countEl.textContent = reports.length > 0 ? `(${reports.length})` : "";
+
+    const container = $("#risk-table-container");
+    const emptyEl = $("#risk-empty");
+
+    if (reports.length === 0) {
+      emptyEl.style.display = "";
+      const t = container.querySelector("table"); if (t) t.remove();
+      return;
+    }
+    emptyEl.style.display = "none";
+
+    let html = `<table class="w-full text-sm"><thead><tr class="text-slate-500 text-xs border-b border-slate-700/40">
+      <th class="text-left py-2 px-4 font-medium">ID</th>
+      <th class="text-left py-2 px-4 font-medium">设备标识</th>
+      <th class="text-left py-2 px-4 font-medium">风险等级</th>
+      <th class="text-left py-2 px-4 font-medium">风险评分</th>
+      <th class="text-left py-2 px-4 font-medium">告警</th>
+      <th class="text-left py-2 px-4 font-medium">上报时间</th>
+      <th class="text-right py-2 px-4 font-medium">操作</th>
+    </tr></thead><tbody>`;
+
+    for (const r of reports) {
+      const t = r.created_at ? r.created_at.replace("T", " ").slice(0, 16) : "-";
+      html += `<tr class="task-row border-b border-slate-700/20">
+        <td class="py-2.5 px-4 text-slate-500 text-xs">#${r.id}</td>
+        <td class="py-2.5 px-4 text-slate-300 text-xs font-mono truncate max-w-[140px]" title="${r.device_fingerprint || ''}">${r.device_fingerprint || '-'}</td>
+        <td class="py-2.5 px-4">${riskBadge(r.risk_level)}</td>
+        <td class="py-2.5 px-4">${scoreBar(r.risk_score, r.max_risk_score)}</td>
+        <td class="py-2.5 px-4 text-xs">
+          ${r.warning_count > 0 ? `<span class="text-amber-400">${r.warning_count} 警告</span>` : ''}
+          ${r.danger_count > 0 ? `<span class="text-red-400 ml-1">${r.danger_count} 危险</span>` : ''}
+          ${r.warning_count === 0 && r.danger_count === 0 ? '<span class="text-slate-500">无</span>' : ''}
+        </td>
+        <td class="py-2.5 px-4 text-slate-500 text-xs">${t}</td>
+        <td class="py-2.5 px-4 text-right space-x-3 text-xs">
+          <button onclick="viewRiskDetail(${r.id})" class="text-brand-400 hover:text-brand-300 transition-colors">详情</button>
+          <button onclick="deleteRiskReport(${r.id})" class="text-red-400/70 hover:text-red-300 transition-colors">删除</button>
+        </td>
+      </tr>`;
+    }
+    html += `</tbody></table>`;
+    const ex = container.querySelector("table"); if (ex) ex.remove();
+    container.insertAdjacentHTML("beforeend", html);
+  } catch (e) {
+    console.error("Failed to load risk data:", e);
+  }
+}
+
+async function viewRiskDetail(id) {
+  const modal = $("#risk-detail-modal");
+  const body = $("#risk-detail-body");
+  body.innerHTML = '<p class="text-slate-400 text-center py-8">加载中...</p>';
+  modal.style.display = "";
+
+  try {
+    const res = await authFetch(`${API}/api/risk/reports/${id}`);
+    const data = await res.json();
+    const report = data.report;
+    const fps = data.fingerprints || [];
+    const dets = data.detections || [];
+
+    let html = '';
+
+    // Overview
+    html += `<div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div class="bg-slate-900/60 rounded-xl p-3 text-center">
+        <p class="text-xs text-slate-500 mb-1">风险等级</p>
+        ${riskBadge(report.risk_level)}
+      </div>
+      <div class="bg-slate-900/60 rounded-xl p-3 text-center">
+        <p class="text-xs text-slate-500 mb-1">风险评分</p>
+        <p class="text-white font-bold">${report.risk_score} / ${report.max_risk_score}</p>
+      </div>
+      <div class="bg-slate-900/60 rounded-xl p-3 text-center">
+        <p class="text-xs text-slate-500 mb-1">警告数</p>
+        <p class="text-amber-400 font-bold">${report.warning_count}</p>
+      </div>
+      <div class="bg-slate-900/60 rounded-xl p-3 text-center">
+        <p class="text-xs text-slate-500 mb-1">危险数</p>
+        <p class="text-red-400 font-bold">${report.danger_count}</p>
+      </div>
+    </div>`;
+
+    // Detections
+    if (dets.length > 0) {
+      html += `<div>
+        <h4 class="text-white text-sm font-semibold mb-2 flex items-center gap-2">
+          <svg class="w-4 h-4 text-red-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          检测结果 (${dets.length})
+        </h4>
+        <div class="space-y-1.5">`;
+      for (const d of dets) {
+        const statusColor = d.status === 'FOUND' || d.status === 'DETECTED' ? 'text-red-400' : 'text-emerald-400';
+        const detailStr = d.details && typeof d.details === 'object' && Object.keys(d.details).length > 0
+          ? `<pre class="mt-1 text-[11px] text-slate-500 bg-slate-900/40 rounded p-2 overflow-x-auto">${JSON.stringify(d.details, null, 2)}</pre>` : '';
+        html += `<div class="bg-slate-900/40 rounded-lg px-4 py-2.5 flex items-start gap-3">
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="text-white text-sm">${d.detector_name}</span>
+              <span class="${statusColor} text-xs font-medium">${d.status}</span>
+              ${riskBadge(d.risk_level)}
+              <span class="text-xs text-slate-500">+${d.score}</span>
+            </div>
+            ${detailStr}
+          </div>
+        </div>`;
+      }
+      html += `</div></div>`;
+    }
+
+    // Fingerprints
+    if (fps.length > 0) {
+      html += `<div>
+        <h4 class="text-white text-sm font-semibold mb-2 flex items-center gap-2">
+          <svg class="w-4 h-4 text-brand-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"/></svg>
+          设备指纹 (${fps.length})
+        </h4>
+        <div class="bg-slate-900/40 rounded-xl overflow-hidden">
+          <table class="w-full text-sm"><tbody>`;
+      for (const f of fps) {
+        html += `<tr class="border-b border-slate-700/20">
+          <td class="py-1.5 px-4 text-slate-500 text-xs w-40 font-mono">${f.field_name}</td>
+          <td class="py-1.5 px-4 text-slate-300 text-xs break-all">${f.field_value || '-'}</td>
+        </tr>`;
+      }
+      html += `</tbody></table></div></div>`;
+    }
+
+    body.innerHTML = html;
+  } catch (e) {
+    body.innerHTML = `<p class="text-red-400 text-center py-8">加载失败: ${e.message}</p>`;
+  }
+}
+
+async function deleteRiskReport(id) {
+  if (!confirm("确定删除此风险报告？")) return;
+  try {
+    await authFetch(`${API}/api/risk/reports/${id}`, { method: "DELETE" });
+    loadRiskData();
+  } catch (_) {}
+}
+
+// Bind risk events
+const btnRiskRefresh = $("#btn-risk-refresh");
+if (btnRiskRefresh) btnRiskRefresh.addEventListener("click", loadRiskData);
+const riskModal = $("#risk-detail-modal");
+const riskCloseBtn = $("#risk-detail-close");
+if (riskCloseBtn) riskCloseBtn.addEventListener("click", () => { riskModal.style.display = "none"; });
+if (riskModal) riskModal.addEventListener("click", (e) => { if (e.target === riskModal) riskModal.style.display = "none"; });
