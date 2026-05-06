@@ -156,9 +156,10 @@ int detect_emulator() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  5. Frida 检测（端口 + 内存映射 + D-Bus 协议探测）
+//  5. Frida 检测（八维全特征检测）
 // ═══════════════════════════════════════════════════════════════
 
+// 5a. 默认端口 + D-Bus 协议探测
 static int detect_frida_port() {
     int sock = socket(AF_INET, SOCK_STREAM, 0);
     if (sock < 0) return 0;
@@ -186,6 +187,37 @@ static int detect_frida_port() {
     return 0;
 }
 
+// 5b. 多端口扫描（Frida 可自定义监听端口）
+static int detect_frida_multi_port() {
+    static const int SUSPECT_PORTS[] = {27042, 27043, 4444, 1234, 9999, 0};
+    for (int i = 0; SUSPECT_PORTS[i] != 0; i++) {
+        int sock = socket(AF_INET, SOCK_STREAM, 0);
+        if (sock < 0) continue;
+
+        struct timeval tv{};
+        tv.tv_usec = 200000;
+        setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+
+        struct sockaddr_in addr{};
+        addr.sin_family      = AF_INET;
+        addr.sin_port        = htons(SUSPECT_PORTS[i]);
+        addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+
+        if (connect(sock, reinterpret_cast<struct sockaddr *>(&addr), sizeof(addr)) == 0) {
+            const char auth[] = "\x00AUTH\r\n";
+            send(sock, auth, sizeof(auth) - 1, 0);
+            char buf[128] = {};
+            recv(sock, buf, sizeof(buf) - 1, 0);
+            close(sock);
+            if (strstr(buf, "REJECTED") || strstr(buf, "OK")) return 1;
+        } else {
+            close(sock);
+        }
+    }
+    return 0;
+}
+
+// 5c. maps 内存映射关键字检测（含 memfd 无文件注入 + .rodata 特征字符串）
 static int detect_frida_maps() {
     FILE *fp = fopen("/proc/self/maps", "r");
     if (!fp) return 0;
@@ -196,7 +228,12 @@ static int detect_frida_maps() {
             strstr(line, "frida-gadget") ||
             strstr(line, "frida-server") ||
             strstr(line, "gum-js-loop") ||
-            strstr(line, "linjector")) {
+            strstr(line, "linjector") ||
+            strstr(line, "frida:rpc") ||
+            strstr(line, "FridaScriptEngine") ||
+            strstr(line, "GDBusProxy") ||
+            strstr(line, "GumScript") ||
+            strstr(line, "GLib-GIO")) {
             fclose(fp);
             return 1;
         }
@@ -205,6 +242,34 @@ static int detect_frida_maps() {
     return 0;
 }
 
+// 5d. memfd 匿名内存映射检测（Frida memfd_create 无文件注入）
+static int detect_frida_memfd() {
+    FILE *fp = fopen("/proc/self/maps", "r");
+    if (!fp) return 0;
+
+    char line[512];
+    while (fgets(line, sizeof(line), fp)) {
+        if (strstr(line, "/memfd:")) {
+            char *name_start = strstr(line, "/memfd:");
+            if (name_start) {
+                if (strstr(name_start, "frida") || strstr(name_start, "agent") ||
+                    strstr(name_start, "gadget") || strstr(name_start, "gum")) {
+                    fclose(fp);
+                    return 1;
+                }
+                if (strstr(name_start, "(deleted)") &&
+                    strstr(name_start, ".so")) {
+                    fclose(fp);
+                    return 1;
+                }
+            }
+        }
+    }
+    fclose(fp);
+    return 0;
+}
+
+// 5e. 线程名特征检测（含 gdbus）
 static int detect_frida_threads() {
     char path[64];
     snprintf(path, sizeof(path), "/proc/%d/task", getpid());
@@ -222,7 +287,81 @@ static int detect_frida_threads() {
             fgets(name, sizeof(name), fp);
             fclose(fp);
             if (strstr(name, "gmain") || strstr(name, "gum-js-loop") ||
-                strstr(name, "frida")) {
+                strstr(name, "gdbus") || strstr(name, "frida") ||
+                strstr(name, "linjector")) {
+                closedir(dir);
+                return 1;
+            }
+        }
+    }
+    closedir(dir);
+    return 0;
+}
+
+// 5f. Unix 抽象套接字检测（/proc/net/unix 中的 frida- 前缀）
+static int detect_frida_unix_socket() {
+    FILE *fp = fopen("/proc/net/unix", "r");
+    if (!fp) return 0;
+
+    char line[512];
+    while (fgets(line, sizeof(line), fp)) {
+        if (strstr(line, "@/frida") || strstr(line, "frida-")) {
+            fclose(fp);
+            return 1;
+        }
+    }
+    fclose(fp);
+    return 0;
+}
+
+// 5g. 进程 cmdline 扫描（遍历可见进程查找 frida-server）
+static int detect_frida_process() {
+    DIR *proc = opendir("/proc");
+    if (!proc) return 0;
+
+    struct dirent *entry;
+    while ((entry = readdir(proc)) != nullptr) {
+        if (entry->d_type != DT_DIR) continue;
+        char *end;
+        long pid = strtol(entry->d_name, &end, 10);
+        if (*end != '\0' || pid <= 0) continue;
+
+        char cmdline_path[64];
+        snprintf(cmdline_path, sizeof(cmdline_path), "/proc/%ld/cmdline", pid);
+        FILE *fp = fopen(cmdline_path, "r");
+        if (fp) {
+            char buf[256] = {};
+            size_t n = fread(buf, 1, sizeof(buf) - 1, fp);
+            fclose(fp);
+            for (size_t i = 0; i < n; i++) {
+                if (buf[i] == '\0') buf[i] = ' ';
+            }
+            if (strstr(buf, "frida") || strstr(buf, "frida-server") ||
+                strstr(buf, "frida-inject") || strstr(buf, "frida-portal")) {
+                closedir(proc);
+                return 1;
+            }
+        }
+    }
+    closedir(proc);
+    return 0;
+}
+
+// 5h. /proc/self/fd 符号链接扫描（Frida 会在 fd 中留下 memfd/socket 特征）
+static int detect_frida_fd() {
+    DIR *dir = opendir("/proc/self/fd");
+    if (!dir) return 0;
+
+    char path[64], link[256];
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != nullptr) {
+        if (entry->d_name[0] == '.') continue;
+        snprintf(path, sizeof(path), "/proc/self/fd/%s", entry->d_name);
+        ssize_t len = readlink(path, link, sizeof(link) - 1);
+        if (len > 0) {
+            link[len] = '\0';
+            if (strstr(link, "frida") || strstr(link, "linjector") ||
+                (strstr(link, "memfd:") && strstr(link, "(deleted)"))) {
                 closedir(dir);
                 return 1;
             }
@@ -233,7 +372,10 @@ static int detect_frida_threads() {
 }
 
 int detect_frida() {
-    return detect_frida_port() || detect_frida_maps() || detect_frida_threads();
+    return detect_frida_port() || detect_frida_multi_port() ||
+           detect_frida_maps() || detect_frida_memfd() ||
+           detect_frida_threads() || detect_frida_unix_socket() ||
+           detect_frida_process() || detect_frida_fd();
 }
 
 static void *frida_watcher(void *) {
@@ -338,6 +480,24 @@ static const char *const ROOT_FILES[] = {
     "/data/adb/modules",
     "/system/framework/XposedBridge.jar",
     "/data/adb/lspd",
+    "/data/adb/modules/zygisk_lsposed",
+    "/data/adb/modules/riru_lsposed",
+    "/data/adb/modules/riru-core",
+    "/data/adb/modules/zygisk_shamiko",
+    "/data/adb/modules/edxposed",
+    "/data/adb/modules/riru_edxposed",
+    "/system/bin/app_process_xposed",
+    "/system/lib/libxposed_art.so",
+    "/system/lib64/libxposed_art.so",
+    "/system/lib/libsubstrate.so",
+    "/system/lib64/libsubstrate.so",
+    "/system/xposed.prop",
+    "/data/local/tmp/frida-server",
+    "/data/local/tmp/frida",
+    "/data/local/tmp/re.frida.server",
+    "/data/local/tmp/libfrida-gadget.so",
+    "/system/bin/frida-server",
+    "/system/xbin/frida-server",
     nullptr
 };
 
@@ -359,7 +519,16 @@ static int detect_xposed_maps() {
             strstr(line, "libxposed") ||
             strstr(line, "lspd") ||
             strstr(line, "edxposed") ||
-            strstr(line, "riru")) {
+            strstr(line, "riru") ||
+            strstr(line, "zygisk") ||
+            strstr(line, "shamiko") ||
+            strstr(line, "substrate") ||
+            strstr(line, "sandhook") ||
+            strstr(line, "yahfa") ||
+            strstr(line, "epic") ||
+            strstr(line, "whale") ||
+            strstr(line, "lsplant") ||
+            strstr(line, "pine")) {
             fclose(fp);
             return 1;
         }
@@ -642,6 +811,145 @@ int detect_art_hook() {
 }
 
 // ═══════════════════════════════════════════════════════════════
+//  14. dlsym 导出符号探测（EnvScope 整合）
+// ═══════════════════════════════════════════════════════════════
+
+int detect_exported_symbols() {
+    static const char *const SUSPECT_SYMBOLS[] = {
+        "frida_agent_main",
+        "frida_gadget_main",
+        "gum_init_embedded",
+        "gum_deinit_embedded",
+        "gum_interceptor_attach",
+        "gum_script_backend_obtain_qjs",
+        "gum_script_backend_obtain_v8",
+        "xposedCallHandler",
+        "MSHookFunction",
+        "MSHookMessageEx",
+        "Java_de_robv_android_xposed_XposedBridge_hookMethodNative",
+        nullptr,
+    };
+
+    for (int i = 0; SUSPECT_SYMBOLS[i]; i++) {
+        if (dlsym(RTLD_DEFAULT, SUSPECT_SYMBOLS[i]) != nullptr) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  15. 异常 RWX 可执行内存段检测（EnvScope + RiskEngine 整合）
+// ═══════════════════════════════════════════════════════════════
+
+int detect_rwx_memory() {
+    FILE *fp = fopen("/proc/self/maps", "r");
+    if (!fp) return 0;
+
+    char line[512];
+    int suspicious_count = 0;
+    while (fgets(line, sizeof(line), fp)) {
+        if (!strstr(line, "rwxp")) continue;
+        if (strstr(line, "/system/") || strstr(line, "/apex/") ||
+            strstr(line, "[anon:dalvik") || strstr(line, "jit-cache") ||
+            strstr(line, "dalvik-jit") || strstr(line, "boot-framework") ||
+            strstr(line, "[vectors]") || strstr(line, "scudo") ||
+            strstr(line, "linker_alloc")) continue;
+        suspicious_count++;
+    }
+    fclose(fp);
+    return (suspicious_count > 0) ? 1 : 0;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  16. dl_iterate_phdr 加载库扫描（EnvScope 整合）
+// ═══════════════════════════════════════════════════════════════
+
+static const char *const DL_SUSPECT_TOKENS[] = {
+    "frida", "gadget", "xposed", "lsposed", "edxposed",
+    "riru", "zygisk", "substrate", "sandhook",
+    "yahfa", "epic", "whale", "linjector", nullptr,
+};
+
+static int dl_iterate_callback(struct dl_phdr_info *info, size_t, void *data) {
+    if (!info || !info->dlpi_name || info->dlpi_name[0] == '\0') return 0;
+    int *found = static_cast<int *>(data);
+    for (int i = 0; DL_SUSPECT_TOKENS[i]; i++) {
+        if (strstr(info->dlpi_name, DL_SUSPECT_TOKENS[i])) {
+            *found = 1;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+int detect_loaded_libraries() {
+    int found = 0;
+    dl_iterate_phdr(dl_iterate_callback, &found);
+    return found;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  17. /proc/net/tcp 端口表扫描（EnvScope 整合）
+// ═══════════════════════════════════════════════════════════════
+
+int detect_tcp_port_table() {
+    static const char *HEX_PORTS[] = {
+        ":69B8", ":69B9", ":69BA", ":69BB", ":69BC",
+        ":69BD", ":69BE", ":69BF", ":69C0", ":69C1", ":69C2",
+        ":5D8A",
+        nullptr,
+    };
+
+    const char *paths[] = {"/proc/net/tcp", "/proc/net/tcp6", nullptr};
+    for (int p = 0; paths[p]; p++) {
+        FILE *fp = fopen(paths[p], "r");
+        if (!fp) continue;
+        char line[256];
+        while (fgets(line, sizeof(line), fp)) {
+            for (int h = 0; HEX_PORTS[h]; h++) {
+                if (strstr(line, HEX_PORTS[h])) {
+                    fclose(fp);
+                    return 1;
+                }
+            }
+        }
+        fclose(fp);
+    }
+    return 0;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  18. SIGTRAP 信号探针（RiskEngine 整合）
+// ═══════════════════════════════════════════════════════════════
+
+#include <signal.h>
+#include <sys/syscall.h>
+
+static volatile sig_atomic_t g_sigtrap_fired = 0;
+
+static void sigtrap_handler(int, siginfo_t *, void *) {
+    g_sigtrap_fired = 1;
+}
+
+int detect_sigtrap_intercept() {
+    struct sigaction action{}, old_action{};
+    action.sa_sigaction = sigtrap_handler;
+    action.sa_flags = SA_SIGINFO;
+    sigemptyset(&action.sa_mask);
+
+    if (sigaction(SIGTRAP, &action, &old_action) != 0) return 0;
+
+    g_sigtrap_fired = 0;
+    pid_t pid = getpid();
+    pid_t tid = static_cast<pid_t>(syscall(__NR_gettid));
+    syscall(__NR_tgkill, pid, tid, SIGTRAP);
+    sigaction(SIGTRAP, &old_action, nullptr);
+
+    return g_sigtrap_fired ? 0 : 1;
+}
+
+// ═══════════════════════════════════════════════════════════════
 //  统一入口
 // ═══════════════════════════════════════════════════════════════
 
@@ -692,4 +1000,19 @@ void start_anti_debug() {
 
     // Layer 14: ART 方法完整性检测（RiskEngine 整合）
     if (detect_art_hook()) silent_crash();
+
+    // Layer 15: dlsym 导出符号探测（EnvScope 整合）
+    if (detect_exported_symbols()) silent_crash();
+
+    // Layer 16: 异常 RWX 可执行内存段检测（EnvScope + RiskEngine 整合）
+    if (detect_rwx_memory()) silent_crash();
+
+    // Layer 17: dl_iterate_phdr 加载库扫描（EnvScope 整合）
+    if (detect_loaded_libraries()) silent_crash();
+
+    // Layer 18: /proc/net/tcp 端口表扫描（EnvScope 整合）
+    if (detect_tcp_port_table()) silent_crash();
+
+    // Layer 19: SIGTRAP 信号探针（RiskEngine 整合）
+    if (detect_sigtrap_intercept()) silent_crash();
 }

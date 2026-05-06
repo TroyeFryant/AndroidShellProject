@@ -273,6 +273,85 @@ async def risk_stats(_user=Depends(require_auth)):
 
 
 # ═══════════════════════════════════════════════════════════════
+#  仪表盘统计 & 系统状态
+# ═══════════════════════════════════════════════════════════════
+
+@app.get("/api/dashboard/stats")
+async def dashboard_stats(_user=Depends(require_auth)):
+    from datetime import datetime, timedelta
+    import collections
+
+    tasks_all = tm.list_tasks()
+    completed = sum(1 for t in tasks_all if t.get("status") == "completed")
+    failed = sum(1 for t in tasks_all if t.get("status") == "failed")
+    total = len(tasks_all)
+    success_rate = round(completed / total * 100, 1) if total > 0 else 0
+
+    today = datetime.now().date()
+    trend = collections.OrderedDict()
+    for i in range(6, -1, -1):
+        d = (today - timedelta(days=i)).isoformat()
+        trend[d] = {"completed": 0, "failed": 0}
+    for t in tasks_all:
+        ts = t.get("created_at", 0)
+        d = datetime.fromtimestamp(ts).date().isoformat()
+        if d in trend:
+            if t.get("status") == "completed":
+                trend[d]["completed"] += 1
+            elif t.get("status") == "failed":
+                trend[d]["failed"] += 1
+
+    risk_total = 0
+    risk_levels = {}
+    recent_alerts = []
+    try:
+        with get_db() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT COUNT(*) as total FROM risk_reports")
+            risk_total = cur.fetchone()["total"]
+            cur.execute("SELECT risk_level, COUNT(*) as cnt FROM risk_reports GROUP BY risk_level")
+            risk_levels = {r["risk_level"]: r["cnt"] for r in cur.fetchall()}
+            cur.execute("""
+                SELECT id, device_fingerprint, risk_level, risk_score, created_at
+                FROM risk_reports ORDER BY created_at DESC LIMIT 5
+            """)
+            for r in cur.fetchall():
+                if r.get("created_at"):
+                    r["created_at"] = r["created_at"].isoformat()
+                recent_alerts.append(r)
+    except Exception:
+        pass
+
+    return {
+        "tasks": {"total": total, "completed": completed, "failed": failed, "success_rate": success_rate},
+        "trend": {d: v for d, v in trend.items()},
+        "risk": {
+            "total": risk_total,
+            "high": risk_levels.get("HIGH", 0) + risk_levels.get("CRITICAL", 0),
+            "medium": risk_levels.get("MEDIUM", 0),
+            "low": risk_levels.get("LOW", 0) + risk_levels.get("NONE", 0) + risk_levels.get("UNKNOWN", 0),
+        },
+        "recent_alerts": recent_alerts,
+        "protection_layers": 22,
+    }
+
+
+@app.get("/api/system/db-status")
+async def db_status(_user=Depends(require_auth)):
+    try:
+        with get_db() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT 1")
+            cur.execute("SELECT COUNT(*) as cnt FROM risk_reports")
+            report_count = cur.fetchone()["cnt"]
+            cur.execute("SELECT COUNT(*) as cnt FROM users")
+            user_count = cur.fetchone()["cnt"]
+        return {"connected": True, "report_count": report_count, "user_count": user_count}
+    except Exception as e:
+        return {"connected": False, "error": str(e)}
+
+
+# ═══════════════════════════════════════════════════════════════
 #  管理后台元信息
 # ═══════════════════════════════════════════════════════════════
 
@@ -376,21 +455,26 @@ async def admin_info(_user=Depends(require_auth)):
                 {"id": 2,  "name": "TracerPid 后台轮询",   "desc": "独立线程每 800ms 读取 /proc/self/status 的 TracerPid，防御延迟附加攻击", "type": "进程级", "mode": "后台线程"},
                 {"id": 3,  "name": "双进程 ptrace 交叉守护","desc": "fork 子进程互相 PTRACE_ATTACH，心跳存活检测，调试器无法附加到任一进程", "type": "进程级", "mode": "独立进程"},
                 {"id": 4,  "name": "模拟器环境检测",        "desc": "检测 18+ 特征文件路径（QEMU/VBox/Nox 等）+ /proc/cpuinfo 虚拟化标记", "type": "环境级", "mode": "启动时"},
-                {"id": 5,  "name": "Frida 即时检测",        "desc": "TCP 27042 端口 + D-Bus 协议探测 + /proc/self/maps 扫描 + 线程名匹配", "type": "工具级", "mode": "启动时"},
-                {"id": 6,  "name": "Frida 持续监控",        "desc": "独立线程每 1.5s 执行三维 Frida 检测（端口/内存映射/线程名）", "type": "工具级", "mode": "后台线程"},
+                {"id": 5,  "name": "Frida 八维即时检测",    "desc": "默认端口+多端口D-Bus探测、maps关键字+memfd匿名映射、线程名(gmain/gdbus/gum-js-loop)、Unix抽象套接字(/proc/net/unix)、进程cmdline扫描、fd符号链接分析", "type": "工具级", "mode": "启动时"},
+                {"id": 6,  "name": "Frida 持续监控",        "desc": "独立线程每 1.5s 执行八维 Frida 全特征检测", "type": "工具级", "mode": "后台线程"},
                 {"id": 7,  "name": "GOT/PLT Hook 检测",    "desc": "校验 fopen/ptrace/open/read/mmap 地址是否在 libc.so 映射范围内", "type": "代码级", "mode": "启动时"},
                 {"id": 8,  "name": "Root/Magisk/Xposed 检测","desc": "13+ 特征文件检测 + /proc/self/maps 扫描 XposedBridge/riru/edxposed/lspd", "type": "环境级", "mode": "启动时"},
                 {"id": 9,  "name": ".text 段 CRC32 校验",   "desc": "运行时解析 ELF 定位 .text 段，计算 CRC32 基准值，后台线程每 3s 复验", "type": "代码级", "mode": "后台线程"},
                 {"id": 10, "name": "时间差反调试检测",      "desc": "clock_gettime(CLOCK_MONOTONIC) 在解密前后设检测点，阈值 800ms", "type": "代码级", "mode": "关键段"},
-                {"id": 11, "name": "容器/沙箱环境检测",     "desc": "检测多开应用特征文件、cgroup 标记、虚拟化路径（VirtualApp/DualSpace/Parallel）", "type": "环境级", "mode": "启动时"},
-                {"id": 12, "name": "云手机环境检测",        "desc": "检测云手机特征属性（ro.cloud.*）+ 低温区计数 + 特征进程", "type": "环境级", "mode": "启动时"},
-                {"id": 13, "name": "Mount 异常分析",        "desc": "解析 /proc/mounts 检测 overlay/tmpfs 异常挂载到系统关键路径", "type": "环境级", "mode": "启动时"},
-                {"id": 14, "name": "ART 方法完整性检测",    "desc": "检验关键 Java 方法的 ART entry_point 地址是否在合法模块范围内", "type": "代码级", "mode": "启动时"},
+                {"id": 11, "name": "容器/沙箱环境检测",     "desc": "进程数异常检测 + FD 链接分析 + 多开应用特征文件扫描（VirtualApp/DualSpace/Parallel）", "type": "环境级", "mode": "启动时"},
+                {"id": 12, "name": "云手机环境检测",        "desc": "thermal zone 计数 + 云手机特征文件 + CPU 信息虚拟化分析", "type": "环境级", "mode": "启动时"},
+                {"id": 13, "name": "Mount 异常分析",        "desc": "/proc/mounts Magisk/tmpfs 挂载检测 + mountinfo core/mirror 扫描", "type": "环境级", "mode": "启动时"},
+                {"id": 14, "name": "ART 方法完整性检测",    "desc": "内存映射扫描 Hook 框架（Frida/Substrate/LSPlant/Pine/SandHook/Whale）", "type": "代码级", "mode": "启动时"},
+                {"id": 15, "name": "dlsym 导出符号探测",    "desc": "检测 frida_agent_main/gum_init_embedded/MSHookFunction/xposedCallHandler 等危险导出符号", "type": "代码级", "mode": "启动时"},
+                {"id": 16, "name": "异常 RWX 内存段检测",   "desc": "扫描 /proc/self/maps 查找非系统的 rwxp 内存映射，动态插桩/inline hook 特征", "type": "代码级", "mode": "启动时"},
+                {"id": 17, "name": "dl_iterate_phdr 库扫描","desc": "通过链接器遍历所有已加载 .so，检测 frida/xposed/substrate/zygisk/shamiko 等 Hook 框架库", "type": "代码级", "mode": "启动时"},
+                {"id": 18, "name": "/proc/net/tcp 端口表",  "desc": "解析 TCP 连接表的十六进制端口，覆盖 Frida 27040-27050 + IDA 23946 端口范围", "type": "工具级", "mode": "启动时"},
+                {"id": 19, "name": "SIGTRAP 信号探针",      "desc": "自发 SIGTRAP 信号验证处理器是否被调试器拦截，检测 ptrace attach 行为", "type": "进程级", "mode": "启动时"},
             ],
             "java_layers": [
-                {"id": 15, "name": "JDWP 调试器检测",       "desc": "Debug.isDebuggerConnected() 检测 Java 调试协议连接", "type": "Java层", "mode": "启动时"},
-                {"id": 16, "name": "FLAG_DEBUGGABLE 检测",   "desc": "ApplicationInfo.flags & FLAG_DEBUGGABLE 检测调试标志位", "type": "Java层", "mode": "启动时"},
-                {"id": 17, "name": "waitingForDebugger 检测","desc": "Debug.waitingForDebugger() 检测是否等待调试器附加", "type": "Java层", "mode": "启动时"},
+                {"id": 20, "name": "JDWP 调试器检测",       "desc": "Debug.isDebuggerConnected() 检测 Java 调试协议连接", "type": "Java层", "mode": "启动时"},
+                {"id": 21, "name": "FLAG_DEBUGGABLE 检测",   "desc": "ApplicationInfo.flags & FLAG_DEBUGGABLE 检测调试标志位", "type": "Java层", "mode": "启动时"},
+                {"id": 22, "name": "waitingForDebugger 检测","desc": "Debug.waitingForDebugger() 检测是否等待调试器附加", "type": "Java层", "mode": "启动时"},
             ],
             "response": "空函数指针触发 SIGSEGV 静默崩溃（不可 Hook、不可拦截）",
             "symbol_hiding": "JNI 动态注册 + -fvisibility=hidden，仅导出 JNI_OnLoad",

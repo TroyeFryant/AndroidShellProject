@@ -3,359 +3,492 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Android Shell Protector</title>
+  <title>Android 应用安全加固管理平台</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          colors: { brand: { 400:'#818cf8', 500:'#6366f1', 600:'#4f46e5', 700:'#4338ca' } },
-        }
-      }
-    }
-  </script>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+  <script>tailwind.config={theme:{extend:{colors:{brand:{50:'#eef2ff',100:'#e0e7ff',200:'#c7d2fe',300:'#a5b4fc',400:'#818cf8',500:'#6366f1',600:'#4f46e5',700:'#4338ca',800:'#3730a3',900:'#312e81'}}}}}</script>
   <style>
-    body { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
-    #drop-zone.drag-over { border-color: #6366f1; background: rgba(99,102,241,0.08); }
-    .progress-bar { transition: width 0.6s ease; }
     ::-webkit-scrollbar { width: 5px; }
-    ::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
-    .task-row { transition: background 0.15s; }
-    .task-row:hover { background: rgba(99,102,241,0.06); }
-    .layer-row { transition: all 0.15s; }
-    .layer-row:hover { background: rgba(99,102,241,0.06); }
-    .tag { display:inline-flex; align-items:center; padding:2px 8px; border-radius:9999px; font-size:11px; font-weight:500; }
-    .nav-item { transition: all 0.15s; }
-    .nav-item:hover { background: rgba(99,102,241,0.08); }
-    .nav-item.active { background: rgba(99,102,241,0.12); color: #818cf8; border-right: 2px solid #6366f1; }
-    .card { background: rgba(30,41,59,0.5); backdrop-filter: blur(12px); border: 1px solid rgba(51,65,85,0.4); border-radius: 1rem; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); overflow: hidden; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 9px; }
+    body { font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+    .nav-item.active { background: rgba(99,102,241,.15); color: #a5b4fc; }
+    .nav-item:hover:not(.active) { background: rgba(255,255,255,.04); }
+    .stat-card { transition: transform .15s, box-shadow .15s; }
+    .stat-card:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(0,0,0,.3); }
+    .tag { display:inline-block; padding:1px 8px; border-radius:6px; font-size:11px; font-weight:500; }
+    .task-row:hover { background: rgba(255,255,255,.02); }
+    .step-dot { width:32px; height:32px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:700; }
+    .step-line { height:2px; flex:1; }
+    .group-header { cursor:pointer; user-select:none; }
+    .group-header:hover { background: rgba(255,255,255,.03); }
+    .drag-over { border-color: #818cf8 !important; background: rgba(99,102,241,.08) !important; }
   </style>
 </head>
-<body class="bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 min-h-screen text-slate-300">
+<body class="bg-slate-950 text-slate-200 min-h-screen">
 
-  <div class="flex min-h-screen">
+<div class="flex min-h-screen">
 
-    <!-- ═══ Left Sidebar ═══ -->
-    <aside class="w-56 shrink-0 bg-slate-900/70 border-r border-slate-700/40 flex flex-col sticky top-0 h-screen">
-      <!-- Logo -->
-      <div class="px-5 py-5 border-b border-slate-700/30">
-        <div class="flex items-center gap-2.5">
-          <div class="w-9 h-9 rounded-xl bg-brand-600 flex items-center justify-center text-lg shrink-0">&#x1F6E1;</div>
-          <div>
-            <p class="text-white font-bold text-sm leading-tight">Shell Protector</p>
-            <p class="text-slate-500 text-[10px]">Android APK 加壳框架</p>
-          </div>
+  <!-- ═══ Left Sidebar ═══ -->
+  <aside class="w-56 shrink-0 bg-slate-900/70 border-r border-slate-700/40 flex flex-col sticky top-0 h-screen">
+    <div class="px-5 py-5 border-b border-slate-700/30">
+      <div class="flex items-center gap-2.5">
+        <div class="w-9 h-9 rounded-xl bg-brand-600 flex items-center justify-center shrink-0">
+          <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+        </div>
+        <div>
+          <p class="text-white font-bold text-sm leading-tight">Shell Protector</p>
+          <p class="text-slate-500 text-[10px]">安全加固管理平台</p>
         </div>
       </div>
+    </div>
 
-      <!-- Navigation -->
-      <nav class="flex-1 py-3 px-2 space-y-0.5">
-        <button class="nav-item active w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-left" data-tab="harden">
-          <svg class="w-[18px] h-[18px] shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
-          <span>APK 加固</span>
-        </button>
-        <button class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-left text-slate-400" data-tab="history">
-          <svg class="w-[18px] h-[18px] shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-          <span>历史记录</span>
-        </button>
-        <button class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-left text-slate-400" data-tab="protection">
-          <svg class="w-[18px] h-[18px] shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
-          <span>防护体系</span>
-        </button>
-        <button class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-left text-slate-400" data-tab="risk">
-          <svg class="w-[18px] h-[18px] shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
-          <span>设备风险</span>
-        </button>
-        <button class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-left text-slate-400" data-tab="system">
-          <svg class="w-[18px] h-[18px] shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-          <span>系统状态</span>
-        </button>
-      </nav>
+    <nav class="flex-1 py-3 px-2 space-y-0.5">
+      <button class="nav-item active w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-left" data-tab="dashboard">
+        <svg class="w-[18px] h-[18px] shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zm0 8a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zm10 0a1 1 0 011-1h4a1 1 0 011 1v6a1 1 0 01-1 1h-4a1 1 0 01-1-1v-6z"/></svg>
+        <span>仪表盘</span>
+      </button>
+      <button class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-left text-slate-400" data-tab="harden">
+        <svg class="w-[18px] h-[18px] shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+        <span>APK 加固</span>
+      </button>
+      <button class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-left text-slate-400" data-tab="history">
+        <svg class="w-[18px] h-[18px] shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        <span>加固记录</span>
+      </button>
+      <button class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-left text-slate-400" data-tab="protection">
+        <svg class="w-[18px] h-[18px] shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+        <span>防护体系</span>
+      </button>
+      <button class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-left text-slate-400" data-tab="risk">
+        <svg class="w-[18px] h-[18px] shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+        <span>设备风险</span>
+      </button>
+      <button class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-left text-slate-400" data-tab="system">
+        <svg class="w-[18px] h-[18px] shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+        <span>系统管理</span>
+      </button>
+    </nav>
 
-      <!-- Bottom -->
-      <div class="px-3 py-3 border-t border-slate-700/30 space-y-2">
-        <button onclick="logout()" class="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-all">
-          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
-          退出登录
-        </button>
-        <p class="text-[10px] text-slate-600 leading-relaxed px-1">v2.0 — 基于主动反调试和<br>动态 DEX 加密解密机制</p>
-      </div>
-    </aside>
+    <div class="px-3 py-3 border-t border-slate-700/30">
+      <button onclick="logout()" class="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-all">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+        退出登录
+      </button>
+    </div>
+  </aside>
 
-    <!-- ═══ Main Content ═══ -->
-    <main class="flex-1 min-w-0 overflow-y-auto h-screen">
+  <!-- ═══ Main Content ═══ -->
+  <main class="flex-1 min-w-0 overflow-y-auto">
 
-      <!-- ─── Tab 1: APK 加固 ─── -->
-      <div id="tab-harden" class="p-6 space-y-6">
-        <div class="flex items-center justify-between">
-          <h2 class="text-white text-lg font-bold">APK 加固</h2>
-          <p class="text-slate-500 text-xs">上传 APK · 一键加固 · 安全下载</p>
+    <!-- ────── 1. 仪表盘 ────── -->
+    <div id="tab-dashboard" class="p-6 space-y-6">
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-xl font-bold text-white">仪表盘</h2>
+          <p class="text-slate-500 text-xs mt-1">系统运行概览</p>
         </div>
+        <button onclick="loadDashboard()" class="text-xs text-slate-500 hover:text-brand-400 transition-colors flex items-center gap-1">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+          刷新
+        </button>
+      </div>
 
-        <div class="card max-w-2xl">
-          <!-- Upload Zone -->
-          <div id="section-upload" class="p-8">
-            <div id="drop-zone"
-                 class="border-2 border-dashed border-slate-600 rounded-xl p-10 text-center cursor-pointer
-                        hover:border-brand-500 hover:bg-brand-500/5 transition-all duration-200">
-              <div class="text-4xl mb-3 opacity-70">&#x1F4F1;</div>
-              <p class="text-white font-medium mb-1">拖拽 APK 文件到此处</p>
-              <p class="text-slate-400 text-sm">或 <span class="text-brand-500 underline">点击选择文件</span></p>
-              <input id="file-input" type="file" accept=".apk" class="hidden">
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="stat-card bg-slate-800/50 border border-slate-700/30 rounded-2xl p-5">
+          <div class="flex items-center justify-between mb-3">
+            <span class="text-slate-500 text-xs">加固任务</span>
+            <div class="w-8 h-8 rounded-lg bg-brand-600/20 flex items-center justify-center">
+              <svg class="w-4 h-4 text-brand-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
             </div>
-            <p id="upload-error" class="text-red-400 text-sm mt-3 hidden"></p>
           </div>
-          <!-- Progress -->
-          <div id="section-progress" class="p-8 hidden">
-            <div class="flex items-center gap-3 mb-4">
-              <div class="w-8 h-8 rounded-lg bg-brand-600/20 flex items-center justify-center">
-                <svg class="w-4 h-4 text-brand-500 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path></svg>
+          <p class="text-2xl font-bold text-white" id="dash-tasks">-</p>
+          <p class="text-xs text-slate-500 mt-1">总任务数</p>
+        </div>
+        <div class="stat-card bg-slate-800/50 border border-slate-700/30 rounded-2xl p-5">
+          <div class="flex items-center justify-between mb-3">
+            <span class="text-slate-500 text-xs">成功率</span>
+            <div class="w-8 h-8 rounded-lg bg-emerald-600/20 flex items-center justify-center">
+              <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>
+            </div>
+          </div>
+          <p class="text-2xl font-bold text-white" id="dash-rate">-</p>
+          <p class="text-xs text-slate-500 mt-1">加固成功率</p>
+        </div>
+        <div class="stat-card bg-slate-800/50 border border-slate-700/30 rounded-2xl p-5">
+          <div class="flex items-center justify-between mb-3">
+            <span class="text-slate-500 text-xs">风险上报</span>
+            <div class="w-8 h-8 rounded-lg bg-amber-600/20 flex items-center justify-center">
+              <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+            </div>
+          </div>
+          <p class="text-2xl font-bold text-white" id="dash-risk">-</p>
+          <p class="text-xs text-slate-500 mt-1">设备上报数</p>
+        </div>
+        <div class="stat-card bg-slate-800/50 border border-slate-700/30 rounded-2xl p-5">
+          <div class="flex items-center justify-between mb-3">
+            <span class="text-slate-500 text-xs">防护层</span>
+            <div class="w-8 h-8 rounded-lg bg-purple-600/20 flex items-center justify-center">
+              <svg class="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+            </div>
+          </div>
+          <p class="text-2xl font-bold text-white" id="dash-layers">22</p>
+          <p class="text-xs text-slate-500 mt-1">纵深防御层数</p>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <div class="bg-slate-800/50 border border-slate-700/30 rounded-2xl p-5">
+          <h3 class="text-sm font-semibold text-white mb-3">近 7 天加固趋势</h3>
+          <div id="chart-trend" style="height:260px"></div>
+        </div>
+        <div class="bg-slate-800/50 border border-slate-700/30 rounded-2xl p-5">
+          <h3 class="text-sm font-semibold text-white mb-3">风险等级分布</h3>
+          <div id="chart-risk-pie" style="height:260px"></div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <div class="bg-slate-800/50 border border-slate-700/30 rounded-2xl p-5">
+          <h3 class="text-sm font-semibold text-white mb-3">防护层分类雷达</h3>
+          <div id="chart-radar" style="height:280px"></div>
+        </div>
+        <div class="bg-slate-800/50 border border-slate-700/30 rounded-2xl p-5">
+          <h3 class="text-sm font-semibold text-white mb-3">加密方案概览</h3>
+          <div id="dash-enc-flow" class="space-y-3 pt-2"></div>
+        </div>
+      </div>
+
+      <div class="bg-slate-800/50 border border-slate-700/30 rounded-2xl p-5">
+        <h3 class="text-sm font-semibold text-white mb-3">最新风险告警</h3>
+        <div id="dash-alerts" class="space-y-2">
+          <p class="text-slate-500 text-xs py-4 text-center">暂无告警记录</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ────── 2. APK 加固 ────── -->
+    <div id="tab-harden" class="p-6 space-y-6" style="display:none">
+      <div>
+        <h2 class="text-xl font-bold text-white">APK 加固</h2>
+        <p class="text-slate-500 text-xs mt-1">上传 APK 文件进行自动化安全加固</p>
+      </div>
+
+      <!-- Upload -->
+      <div id="section-upload">
+        <div id="drop-zone" class="border-2 border-dashed border-slate-700/60 rounded-2xl p-12 text-center cursor-pointer hover:border-brand-500/50 hover:bg-brand-500/[0.03] transition-all">
+          <div class="w-16 h-16 mx-auto mb-4 rounded-2xl bg-brand-600/10 flex items-center justify-center">
+            <svg class="w-8 h-8 text-brand-400" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/></svg>
+          </div>
+          <p class="text-white font-medium mb-1">拖拽 APK 文件到此处</p>
+          <p class="text-slate-500 text-xs">或点击选择文件</p>
+        </div>
+        <input id="file-input" type="file" accept=".apk" class="hidden">
+        <p id="upload-error" class="text-red-400 text-xs mt-3 hidden"></p>
+      </div>
+
+      <!-- Progress -->
+      <div id="section-progress" class="hidden">
+        <div class="bg-slate-800/50 border border-slate-700/30 rounded-2xl p-6">
+          <div class="flex items-center gap-3 mb-5">
+            <div class="w-10 h-10 rounded-xl bg-brand-600/20 flex items-center justify-center">
+              <svg class="w-5 h-5 text-brand-400 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+            </div>
+            <div>
+              <p class="text-white font-medium text-sm" id="progress-filename">-</p>
+              <p class="text-slate-500 text-xs" id="progress-message">准备中...</p>
+            </div>
+            <span class="ml-auto text-brand-400 font-bold text-lg" id="progress-percent">0%</span>
+          </div>
+
+          <!-- Steps -->
+          <div class="flex items-center gap-0 mb-5 px-2" id="step-bar">
+            <div class="flex flex-col items-center" data-step="0">
+              <div class="step-dot bg-slate-700 text-slate-400">1</div>
+              <span class="text-[10px] text-slate-500 mt-1.5">上传</span>
+            </div>
+            <div class="step-line bg-slate-700"></div>
+            <div class="flex flex-col items-center" data-step="1">
+              <div class="step-dot bg-slate-700 text-slate-400">2</div>
+              <span class="text-[10px] text-slate-500 mt-1.5">加密DEX</span>
+            </div>
+            <div class="step-line bg-slate-700"></div>
+            <div class="flex flex-col items-center" data-step="2">
+              <div class="step-dot bg-slate-700 text-slate-400">3</div>
+              <span class="text-[10px] text-slate-500 mt-1.5">重打包</span>
+            </div>
+            <div class="step-line bg-slate-700"></div>
+            <div class="flex flex-col items-center" data-step="3">
+              <div class="step-dot bg-slate-700 text-slate-400">4</div>
+              <span class="text-[10px] text-slate-500 mt-1.5">签名</span>
+            </div>
+            <div class="step-line bg-slate-700"></div>
+            <div class="flex flex-col items-center" data-step="4">
+              <div class="step-dot bg-slate-700 text-slate-400">5</div>
+              <span class="text-[10px] text-slate-500 mt-1.5">完成</span>
+            </div>
+          </div>
+
+          <div class="w-full bg-slate-700/40 rounded-full h-2 overflow-hidden">
+            <div id="progress-bar" class="h-full rounded-full bg-gradient-to-r from-brand-600 to-brand-400 transition-all duration-500" style="width:0%"></div>
+          </div>
+
+          <div class="mt-4 flex items-center gap-2">
+            <button id="btn-toggle-log" class="text-xs text-slate-500 hover:text-brand-400 transition-colors">查看日志</button>
+          </div>
+          <pre id="log-box" class="hidden mt-3 bg-slate-900/60 rounded-xl p-4 text-xs text-slate-400 max-h-48 overflow-auto font-mono leading-relaxed"></pre>
+        </div>
+      </div>
+
+      <!-- Result -->
+      <div id="section-result" class="hidden">
+        <div id="result-success" class="hidden">
+          <div class="bg-slate-800/50 border border-emerald-500/20 rounded-2xl p-6">
+            <div class="flex items-center gap-3 mb-5">
+              <div class="w-12 h-12 rounded-xl bg-emerald-500/15 flex items-center justify-center">
+                <svg class="w-6 h-6 text-emerald-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
               </div>
               <div>
-                <p id="progress-filename" class="text-white text-sm font-medium"></p>
-                <p id="progress-message" class="text-slate-400 text-xs"></p>
+                <p class="text-emerald-400 font-semibold">加固成功</p>
+                <p class="text-slate-400 text-xs mt-0.5" id="result-filename">-</p>
               </div>
             </div>
-            <div class="w-full bg-slate-700/50 rounded-full h-2.5 mb-2">
-              <div id="progress-bar" class="progress-bar bg-gradient-to-r from-blue-500 to-brand-500 h-2.5 rounded-full" style="width:0%"></div>
-            </div>
-            <p id="progress-percent" class="text-right text-slate-500 text-xs">0%</p>
-            <button id="btn-toggle-log" class="mt-4 text-xs text-slate-400 hover:text-slate-200 flex items-center gap-1 transition-colors">
-              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
-              查看加固日志
-            </button>
-            <pre id="log-box" class="hidden mt-2 bg-slate-900/80 rounded-lg p-4 text-xs text-slate-300 max-h-48 overflow-y-auto leading-relaxed"></pre>
-          </div>
-          <!-- Result -->
-          <div id="section-result" class="p-8 hidden">
-            <div id="result-success" class="hidden text-center">
-              <div class="w-14 h-14 mx-auto mb-4 rounded-full bg-emerald-500/15 flex items-center justify-center text-2xl">&#x2705;</div>
-              <p class="text-white font-semibold mb-1">加固完成</p>
-              <p id="result-filename" class="text-slate-400 text-sm mb-5"></p>
-              <a id="btn-download" class="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-medium px-6 py-2.5 rounded-xl transition-colors shadow-lg shadow-emerald-600/20">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/></svg>
-                下载加固产物
-              </a>
-              <button id="btn-restart" class="block mx-auto mt-4 text-xs text-slate-400 hover:text-slate-200 transition-colors">&larr; 继续加固其他 APK</button>
-            </div>
-            <div id="result-fail" class="hidden text-center">
-              <div class="w-14 h-14 mx-auto mb-4 rounded-full bg-red-500/15 flex items-center justify-center text-2xl">&#x274C;</div>
-              <p class="text-white font-semibold mb-1">加固失败</p>
-              <p id="fail-message" class="text-red-400 text-sm mb-5"></p>
-              <button id="btn-retry" class="text-sm text-slate-400 hover:text-slate-200 transition-colors">&larr; 重新上传</button>
+            <div class="grid grid-cols-2 gap-3 mb-5" id="result-compare"></div>
+            <div class="flex gap-3">
+              <a id="btn-download" href="#" class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-medium py-2.5 rounded-xl text-center text-sm transition-all">下载加固 APK</a>
+              <button id="btn-restart" class="px-5 py-2.5 bg-slate-700/50 hover:bg-slate-600/50 text-slate-300 rounded-xl text-sm transition-all">继续加固</button>
             </div>
           </div>
         </div>
-
-      </div>
-
-      <!-- ─── Tab 2: 历史记录 ─── -->
-      <div id="tab-history" class="p-6 space-y-6" style="display:none">
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-2">
-            <h2 class="text-white text-lg font-bold">历史记录</h2>
-            <span id="history-count" class="text-slate-500 text-xs"></span>
-          </div>
-          <div class="flex items-center gap-2">
-            <button id="btn-refresh" class="text-xs text-slate-400 hover:text-slate-200 transition-colors flex items-center gap-1 px-2.5 py-1.5 rounded-lg hover:bg-slate-700/50 border border-slate-700/40">
-              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-              刷新
-            </button>
-            <button id="btn-clear-all" class="text-xs text-red-400 hover:text-red-300 transition-colors flex items-center gap-1 px-2.5 py-1.5 rounded-lg hover:bg-red-500/10 border border-red-500/20">
-              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
-              一键清理
-            </button>
-          </div>
-        </div>
-
-        <div class="card">
-          <div id="history-list" class="overflow-y-auto">
-            <div id="history-empty" class="py-16 text-center">
-              <div class="text-3xl mb-3 opacity-50">&#x1F4CB;</div>
-              <p class="text-slate-500 text-sm">暂无加固记录</p>
-              <p class="text-slate-600 text-xs mt-1">上传 APK 进行加固后，记录将显示在这里</p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- ─── Tab 3: 防护体系 ─── -->
-      <div id="tab-protection" class="p-6 space-y-6" style="display:none">
-        <div class="flex items-center justify-between">
-          <h2 class="text-white text-lg font-bold">防护体系</h2>
-          <p class="text-slate-500 text-xs">主动反调试 + 动态加密解密</p>
-        </div>
-
-        <!-- Stats mini bar -->
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div class="card p-3 text-center"><p class="text-2xl font-bold text-white" id="stat-layers">—</p><p class="text-[11px] text-slate-400 mt-0.5">防护层数</p></div>
-          <div class="card p-3 text-center"><p class="text-2xl font-bold text-emerald-400" id="stat-lines">—</p><p class="text-[11px] text-slate-400 mt-0.5">核心代码行</p></div>
-          <div class="card p-3 text-center"><p class="text-2xl font-bold text-blue-400" id="stat-tasks">—</p><p class="text-[11px] text-slate-400 mt-0.5">加固任务</p></div>
-          <div class="card p-3 text-center"><p class="text-2xl font-bold text-amber-400" id="stat-abis">—</p><p class="text-[11px] text-slate-400 mt-0.5">支持架构</p></div>
-        </div>
-
-        <div class="grid grid-cols-1 xl:grid-cols-5 gap-6">
-          <!-- Anti-debug (3/5) -->
-          <div class="xl:col-span-3">
-            <div class="card">
-              <div class="px-6 py-4 border-b border-slate-700/40 flex items-center justify-between">
-                <div class="flex items-center gap-2">
-                  <svg class="w-5 h-5 text-red-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                  <span class="text-white font-semibold">主动反调试防护体系</span>
-                </div>
-                <span class="text-xs text-slate-500" id="debug-count"></span>
+        <div id="result-fail" class="hidden">
+          <div class="bg-slate-800/50 border border-red-500/20 rounded-2xl p-6">
+            <div class="flex items-center gap-3 mb-4">
+              <div class="w-12 h-12 rounded-xl bg-red-500/15 flex items-center justify-center">
+                <svg class="w-6 h-6 text-red-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
               </div>
-              <div class="divide-y divide-slate-700/30 max-h-[600px] overflow-y-auto" id="debug-layers"></div>
-            </div>
-          </div>
-          <!-- Encryption (2/5) -->
-          <div class="xl:col-span-2">
-            <div class="card">
-              <div class="px-6 py-4 border-b border-slate-700/40 flex items-center gap-2">
-                <svg class="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
-                <span class="text-white font-semibold">动态 DEX 加密解密</span>
-              </div>
-              <div class="p-5 space-y-3" id="enc-grid"></div>
-              <div class="px-5 pb-5">
-                <div class="bg-slate-900/60 rounded-xl p-4">
-                  <p class="text-xs text-slate-500 mb-2 font-medium">密文结构</p>
-                  <div class="flex items-center gap-0 text-xs font-mono">
-                    <div class="bg-blue-500/20 text-blue-300 border border-blue-500/30 rounded-l-lg px-2.5 py-2 text-center">IV<br><span class="text-[10px] text-blue-400">16B</span></div>
-                    <div class="bg-brand-500/20 text-brand-400 border-y border-brand-500/30 px-3 py-2 text-center flex-1">AES-CBC 密文<br><span class="text-[10px] text-brand-300">可变</span></div>
-                    <div class="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-r-lg px-2.5 py-2 text-center">HMAC<br><span class="text-[10px] text-emerald-400">32B</span></div>
-                  </div>
-                </div>
+              <div>
+                <p class="text-red-400 font-semibold">加固失败</p>
+                <p class="text-slate-400 text-xs mt-0.5" id="fail-message">-</p>
               </div>
             </div>
+            <button id="btn-retry" class="bg-slate-700/50 hover:bg-slate-600/50 text-slate-300 px-5 py-2.5 rounded-xl text-sm transition-all">重试</button>
           </div>
         </div>
       </div>
+    </div>
 
-      <!-- ─── Tab: 设备风险 ─── -->
-      <div id="tab-risk" class="p-6 space-y-6" style="display:none">
-        <div class="flex items-center justify-between">
-          <h2 class="text-white text-lg font-bold">设备风险监控</h2>
-          <div class="flex items-center gap-2">
-            <button id="btn-risk-refresh" class="text-xs text-slate-400 hover:text-slate-200 transition-colors flex items-center gap-1 px-2.5 py-1.5 rounded-lg hover:bg-slate-700/50 border border-slate-700/40">
-              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-              刷新
+    <!-- ────── 3. 加固记录 ────── -->
+    <div id="tab-history" class="p-6 space-y-5" style="display:none">
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-xl font-bold text-white">加固记录 <span id="history-count" class="text-sm text-slate-500 font-normal"></span></h2>
+          <p class="text-slate-500 text-xs mt-1">历史加固任务管理</p>
+        </div>
+        <div class="flex gap-2">
+          <button id="btn-refresh" class="text-xs text-slate-500 hover:text-brand-400 transition-colors flex items-center gap-1">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+            刷新
+          </button>
+          <button id="btn-clear-all" class="text-xs text-red-400/70 hover:text-red-300 transition-colors">清空全部</button>
+        </div>
+      </div>
+
+      <!-- Filter -->
+      <div class="flex gap-2" id="history-filters">
+        <button class="filter-btn active tag bg-brand-500/15 text-brand-300" data-filter="all">全部</button>
+        <button class="filter-btn tag bg-slate-700/40 text-slate-400" data-filter="completed">已完成</button>
+        <button class="filter-btn tag bg-slate-700/40 text-slate-400" data-filter="failed">失败</button>
+        <button class="filter-btn tag bg-slate-700/40 text-slate-400" data-filter="processing">进行中</button>
+      </div>
+
+      <div class="bg-slate-800/50 border border-slate-700/30 rounded-2xl overflow-hidden">
+        <div id="history-list"></div>
+        <div id="history-empty" class="hidden py-16 text-center">
+          <svg class="w-12 h-12 mx-auto text-slate-700 mb-3" fill="none" stroke="currentColor" stroke-width="1" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/></svg>
+          <p class="text-slate-500 text-sm">暂无加固记录</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ────── 4. 防护体系 ────── -->
+    <div id="tab-protection" class="p-6 space-y-6" style="display:none">
+      <div>
+        <h2 class="text-xl font-bold text-white">防护体系</h2>
+        <p class="text-slate-500 text-xs mt-1">22 层纵深防御架构 & 动态 DEX 加密方案</p>
+      </div>
+
+      <!-- Layer category stats -->
+      <div class="grid grid-cols-5 gap-3" id="prot-category-stats"></div>
+
+      <!-- Charts -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <div class="bg-slate-800/50 border border-slate-700/30 rounded-2xl p-5">
+          <h3 class="text-sm font-semibold text-white mb-3">防护层分类分布</h3>
+          <div id="chart-prot-pie" style="height:260px"></div>
+        </div>
+        <div class="bg-slate-800/50 border border-slate-700/30 rounded-2xl p-5">
+          <h3 class="text-sm font-semibold text-white mb-3">检测模式分布</h3>
+          <div id="chart-mode-pie" style="height:260px"></div>
+        </div>
+      </div>
+
+      <!-- Architecture -->
+      <div class="bg-slate-800/50 border border-slate-700/30 rounded-2xl p-6">
+        <h3 class="text-sm font-semibold text-white mb-4">加壳整体架构流程</h3>
+        <div id="prot-arch-flow" class="flex items-center gap-0 overflow-x-auto pb-2"></div>
+      </div>
+
+      <!-- Encryption pipeline -->
+      <div class="bg-slate-800/50 border border-slate-700/30 rounded-2xl p-6">
+        <h3 class="text-sm font-semibold text-white mb-4">加密方案流程</h3>
+        <div id="prot-enc-pipeline" class="grid grid-cols-2 lg:grid-cols-4 gap-3"></div>
+      </div>
+
+      <!-- Grouped layers -->
+      <div class="bg-slate-800/50 border border-slate-700/30 rounded-2xl overflow-hidden">
+        <div class="px-5 py-4 border-b border-slate-700/30 flex items-center justify-between">
+          <h3 class="text-sm font-semibold text-white">防护层详细列表</h3>
+          <span class="text-xs text-slate-500" id="prot-layer-count">-</span>
+        </div>
+        <div id="prot-groups"></div>
+        <div id="prot-response" class="px-5 py-3 bg-slate-900/40 border-t border-slate-700/20"></div>
+      </div>
+    </div>
+
+    <!-- ────── 5. 设备风险 ────── -->
+    <div id="tab-risk" class="p-6 space-y-6" style="display:none">
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-xl font-bold text-white">设备风险 <span id="risk-report-count" class="text-sm text-slate-500 font-normal"></span></h2>
+          <p class="text-slate-500 text-xs mt-1">运行时安全态势监控</p>
+        </div>
+        <button id="btn-risk-refresh" class="text-xs text-slate-500 hover:text-brand-400 transition-colors flex items-center gap-1">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+          刷新
+        </button>
+      </div>
+
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="stat-card bg-slate-800/50 border border-slate-700/30 rounded-2xl p-5">
+          <p class="text-slate-500 text-xs mb-2">总上报数</p>
+          <p class="text-2xl font-bold text-white" id="risk-total">0</p>
+        </div>
+        <div class="stat-card bg-slate-800/50 border border-red-500/20 rounded-2xl p-5">
+          <p class="text-slate-500 text-xs mb-2">高危</p>
+          <p class="text-2xl font-bold text-red-400" id="risk-high">0</p>
+        </div>
+        <div class="stat-card bg-slate-800/50 border border-amber-500/20 rounded-2xl p-5">
+          <p class="text-slate-500 text-xs mb-2">中危</p>
+          <p class="text-2xl font-bold text-amber-400" id="risk-medium">0</p>
+        </div>
+        <div class="stat-card bg-slate-800/50 border border-emerald-500/20 rounded-2xl p-5">
+          <p class="text-slate-500 text-xs mb-2">低危/安全</p>
+          <p class="text-2xl font-bold text-emerald-400" id="risk-low">0</p>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <div class="bg-slate-800/50 border border-slate-700/30 rounded-2xl p-5">
+          <h3 class="text-sm font-semibold text-white mb-3">风险等级分布</h3>
+          <div id="chart-risk-detail-pie" style="height:240px"></div>
+        </div>
+        <div class="bg-slate-800/50 border border-slate-700/30 rounded-2xl p-5">
+          <h3 class="text-sm font-semibold text-white mb-3">近期上报趋势</h3>
+          <div id="chart-risk-trend" style="height:240px"></div>
+        </div>
+      </div>
+
+      <div class="bg-slate-800/50 border border-slate-700/30 rounded-2xl overflow-hidden">
+        <div id="risk-table-container"></div>
+        <div id="risk-empty" class="py-12 text-center">
+          <svg class="w-10 h-10 mx-auto text-slate-700 mb-2" fill="none" stroke="currentColor" stroke-width="1" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+          <p class="text-slate-500 text-sm">暂无风险报告</p>
+        </div>
+      </div>
+
+      <!-- Detail modal -->
+      <div id="risk-detail-modal" style="display:none" class="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
+        <div class="bg-slate-800 border border-slate-700/40 rounded-2xl w-full max-w-2xl max-h-[85vh] overflow-y-auto">
+          <div class="sticky top-0 bg-slate-800 px-6 py-4 border-b border-slate-700/30 flex items-center justify-between z-10">
+            <h3 class="text-white font-semibold">风险报告详情</h3>
+            <button id="risk-detail-close" class="text-slate-500 hover:text-white transition-colors">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
             </button>
           </div>
+          <div id="risk-detail-body" class="p-6 space-y-5"></div>
         </div>
+      </div>
+    </div>
 
-        <!-- Stats Cards -->
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div class="card p-3 text-center">
-            <p class="text-2xl font-bold text-white" id="risk-total">—</p>
-            <p class="text-[11px] text-slate-400 mt-0.5">总上报数</p>
-          </div>
-          <div class="card p-3 text-center">
-            <p class="text-2xl font-bold text-red-400" id="risk-high">—</p>
-            <p class="text-[11px] text-slate-400 mt-0.5">高风险</p>
-          </div>
-          <div class="card p-3 text-center">
-            <p class="text-2xl font-bold text-amber-400" id="risk-medium">—</p>
-            <p class="text-[11px] text-slate-400 mt-0.5">中风险</p>
-          </div>
-          <div class="card p-3 text-center">
-            <p class="text-2xl font-bold text-emerald-400" id="risk-low">—</p>
-            <p class="text-[11px] text-slate-400 mt-0.5">低/无风险</p>
-          </div>
+    <!-- ────── 6. 系统管理 ────── -->
+    <div id="tab-system" class="p-6 space-y-6" style="display:none">
+      <div>
+        <h2 class="text-xl font-bold text-white">系统管理</h2>
+        <p class="text-slate-500 text-xs mt-1">组件状态 & 工具链 & 源码统计</p>
+      </div>
+
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-4" id="sys-stat-cards">
+        <div class="stat-card bg-slate-800/50 border border-slate-700/30 rounded-2xl p-5">
+          <p class="text-slate-500 text-xs mb-2">防护层数</p>
+          <p class="text-2xl font-bold text-white" id="sys-layers">-</p>
         </div>
-
-        <!-- Risk Reports Table -->
-        <div class="card">
-          <div class="px-6 py-4 border-b border-slate-700/40 flex items-center gap-2">
-            <svg class="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-            <span class="text-white font-semibold">风险报告列表</span>
-            <span id="risk-report-count" class="text-xs text-slate-500 ml-1"></span>
-          </div>
-          <div id="risk-table-container" class="overflow-y-auto max-h-[500px]">
-            <div id="risk-empty" class="py-16 text-center">
-              <div class="text-3xl mb-3 opacity-50">&#x1F4CA;</div>
-              <p class="text-slate-500 text-sm">暂无设备风险数据</p>
-              <p class="text-slate-600 text-xs mt-1">设备端 RiskEngine SDK 上报后将在此显示</p>
-            </div>
-          </div>
+        <div class="stat-card bg-slate-800/50 border border-slate-700/30 rounded-2xl p-5">
+          <p class="text-slate-500 text-xs mb-2">源码行数</p>
+          <p class="text-2xl font-bold text-white" id="sys-lines">-</p>
         </div>
-
-        <!-- Detail Modal -->
-        <div id="risk-detail-modal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" style="display:none">
-          <div class="bg-slate-800 border border-slate-700/50 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[80vh] overflow-y-auto">
-            <div class="sticky top-0 bg-slate-800 px-6 py-4 border-b border-slate-700/40 flex items-center justify-between z-10">
-              <h3 class="text-white font-semibold">风险报告详情</h3>
-              <button id="risk-detail-close" class="text-slate-400 hover:text-white transition-colors">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
-              </button>
-            </div>
-            <div id="risk-detail-body" class="p-6 space-y-5"></div>
-          </div>
+        <div class="stat-card bg-slate-800/50 border border-slate-700/30 rounded-2xl p-5">
+          <p class="text-slate-500 text-xs mb-2">加固成功/总数</p>
+          <p class="text-2xl font-bold text-white" id="sys-tasks">-</p>
+        </div>
+        <div class="stat-card bg-slate-800/50 border border-slate-700/30 rounded-2xl p-5">
+          <p class="text-slate-500 text-xs mb-2">ABI 架构</p>
+          <p class="text-2xl font-bold text-white" id="sys-abis">-</p>
         </div>
       </div>
 
-      <!-- ─── Tab: 系统状态 ─── -->
-      <div id="tab-system" class="p-6 space-y-6" style="display:none">
-        <div class="flex items-center justify-between">
-          <h2 class="text-white text-lg font-bold">系统状态</h2>
-          <p class="text-slate-500 text-xs">组件 · 工具链 · 源码</p>
-        </div>
-
-        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-          <!-- Components -->
-          <div class="card">
-            <div class="px-5 py-3.5 border-b border-slate-700/40 flex items-center gap-2">
-              <svg class="w-4 h-4 text-brand-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/></svg>
-              <span class="text-white text-sm font-semibold">组件状态</span>
-            </div>
-            <div class="p-4 space-y-3" id="component-list"></div>
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <div class="space-y-5">
+          <div class="bg-slate-800/50 border border-slate-700/30 rounded-2xl p-5">
+            <h3 class="text-sm font-semibold text-white mb-4">组件状态</h3>
+            <div id="sys-components" class="space-y-2.5"></div>
           </div>
-          <!-- Tools -->
-          <div class="card">
-            <div class="px-5 py-3.5 border-b border-slate-700/40 flex items-center gap-2">
-              <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-              <span class="text-white text-sm font-semibold">构建工具</span>
-            </div>
-            <div class="p-4 space-y-2" id="tools-list"></div>
+          <div class="bg-slate-800/50 border border-slate-700/30 rounded-2xl p-5">
+            <h3 class="text-sm font-semibold text-white mb-4">工具链检测</h3>
+            <div id="sys-tools" class="space-y-2"></div>
           </div>
-          <!-- Native -->
-          <div class="card">
-            <div class="px-5 py-3.5 border-b border-slate-700/40 flex items-center gap-2">
-              <svg class="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
-              <span class="text-white text-sm font-semibold">Native 库 (libguard.so)</span>
-            </div>
-            <div class="p-4 space-y-2" id="native-list"></div>
+          <div class="bg-slate-800/50 border border-slate-700/30 rounded-2xl p-5">
+            <h3 class="text-sm font-semibold text-white mb-4">数据库状态</h3>
+            <div id="sys-db" class="space-y-2"></div>
+          </div>
+          <div class="bg-slate-800/50 border border-slate-700/30 rounded-2xl p-5">
+            <h3 class="text-sm font-semibold text-white mb-4">Native 库</h3>
+            <div id="sys-native" class="space-y-2"></div>
           </div>
         </div>
-
-        <!-- Source files (full width) -->
-        <div class="card">
-          <div class="px-5 py-3.5 border-b border-slate-700/40 flex items-center gap-2">
-            <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
-            <span class="text-white text-sm font-semibold">核心源文件</span>
-          </div>
-          <div class="p-5 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2" id="source-list"></div>
+        <div class="bg-slate-800/50 border border-slate-700/30 rounded-2xl p-5">
+          <h3 class="text-sm font-semibold text-white mb-3">源码文件统计</h3>
+          <div id="chart-source-bar" style="height:400px"></div>
         </div>
       </div>
+    </div>
 
-    </main>
-  </div>
+  </main>
+</div>
 
-  <script>
-  (function(){
-    var panels = document.querySelectorAll('[id^="tab-"]');
-    var btns = document.querySelectorAll('.nav-item[data-tab]');
-    btns.forEach(function(btn){
-      btn.addEventListener('click', function(){
-        var name = btn.dataset.tab;
-        panels.forEach(function(p){ p.style.display = (p.id === 'tab-' + name) ? '' : 'none'; });
-        btns.forEach(function(b){
-          b.classList.toggle('active', b.dataset.tab === name);
-          b.classList.toggle('text-slate-400', b.dataset.tab !== name);
-        });
-      });
-    });
-  })();
-  </script>
-  <script src="/static/app.js?v=5"></script>
+<script>
+(function(){
+  const navBtns = document.querySelectorAll('.nav-item[data-tab]');
+  const panels = {};
+  ['dashboard','harden','history','protection','risk','system'].forEach(t => {
+    panels[t] = document.getElementById('tab-' + t);
+  });
+  function doSwitch(name) {
+    Object.entries(panels).forEach(([k,el]) => { if(el) el.style.display = k===name ? '' : 'none'; });
+    navBtns.forEach(b => { const a = b.dataset.tab===name; b.classList.toggle('active',a); b.classList.toggle('text-slate-400',!a); });
+  }
+  navBtns.forEach(b => b.addEventListener('click', () => doSwitch(b.dataset.tab)));
+})();
+</script>
+<script src="/static/app.js?v=10"></script>
 </body>
 </html>

@@ -21,6 +21,11 @@ int  detect_sandbox();
 int  detect_cloud_phone();
 int  detect_mount_anomaly();
 int  detect_art_hook();
+int  detect_exported_symbols();
+int  detect_rwx_memory();
+int  detect_loaded_libraries();
+int  detect_tcp_port_table();
+int  detect_sigtrap_intercept();
 
 #ifdef __cplusplus
 }

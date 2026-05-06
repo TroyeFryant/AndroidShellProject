@@ -3,115 +3,106 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>登录 — Android Shell Protector</title>
+  <title>登录 — Android 应用安全加固管理平台</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          colors: { brand: { 400:'#818cf8', 500:'#6366f1', 600:'#4f46e5', 700:'#4338ca' } },
-        }
-      }
-    }
-  </script>
+  <script>tailwind.config={theme:{extend:{colors:{brand:{50:'#eef2ff',100:'#e0e7ff',200:'#c7d2fe',300:'#a5b4fc',400:'#818cf8',500:'#6366f1',600:'#4f46e5',700:'#4338ca',800:'#3730a3',900:'#312e81'}}}}}</script>
   <style>
-    body { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
-    .shake { animation: shake 0.4s ease-in-out; }
-    @keyframes shake {
-      0%,100% { transform: translateX(0); }
-      20%,60% { transform: translateX(-6px); }
-      40%,80% { transform: translateX(6px); }
+    @keyframes gradientShift {
+      0%,100% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
     }
+    @keyframes float {
+      0%,100% { transform: translateY(0) rotate(0deg); opacity: .6; }
+      50% { transform: translateY(-20px) rotate(3deg); opacity: 1; }
+    }
+    .bg-animated {
+      background: linear-gradient(-45deg, #0f172a, #1e1b4b, #172554, #0c4a6e, #1e1b4b);
+      background-size: 400% 400%;
+      animation: gradientShift 15s ease infinite;
+    }
+    .glass { backdrop-filter: blur(16px) saturate(180%); }
+    .orb {
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(80px);
+      opacity: .18;
+      animation: float 8s ease-in-out infinite;
+    }
+    .input-focus:focus { box-shadow: 0 0 0 2px rgba(99,102,241,.45); }
   </style>
 </head>
-<body class="bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 min-h-screen flex items-center justify-center p-4">
+<body class="bg-animated min-h-screen flex items-center justify-center p-4 relative overflow-hidden">
 
-  <div class="w-full max-w-sm">
+  <div class="orb w-72 h-72 bg-brand-500 -top-20 -left-20" style="animation-delay:0s"></div>
+  <div class="orb w-96 h-96 bg-cyan-500 -bottom-32 -right-32" style="animation-delay:3s"></div>
+  <div class="orb w-60 h-60 bg-purple-600 top-1/3 right-1/4" style="animation-delay:5s"></div>
+
+  <div class="w-full max-w-md relative z-10">
     <div class="text-center mb-8">
-      <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-brand-600 text-3xl mb-4 shadow-lg shadow-brand-600/30">&#x1F6E1;</div>
-      <h1 class="text-white text-xl font-bold">Android Shell Protector</h1>
-      <p class="text-slate-500 text-sm mt-1">管理后台登录</p>
+      <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-brand-600/80 mb-4 shadow-lg shadow-brand-500/25">
+        <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+        </svg>
+      </div>
+      <h1 class="text-white text-xl font-bold tracking-wide">Android 应用安全加固管理平台</h1>
+      <p class="text-slate-400 text-xs mt-2 leading-relaxed">基于主动反调试和动态 DEX 加密解密机制的加壳框架</p>
     </div>
 
-    <div id="login-card" class="bg-slate-800/50 backdrop-blur border border-slate-700/40 rounded-2xl shadow-2xl p-8">
+    <div class="glass bg-white/[0.06] border border-white/[0.08] rounded-2xl p-8 shadow-2xl">
+      <h2 class="text-white text-lg font-semibold mb-6">登录</h2>
       <form id="login-form" autocomplete="off">
-        <div class="space-y-4">
-          <div>
-            <label class="block text-slate-400 text-xs font-medium mb-1.5">用户名</label>
-            <input id="inp-user" type="text" required autofocus
-                   class="w-full bg-slate-900/60 border border-slate-700/50 rounded-xl px-4 py-2.5 text-white text-sm
-                          placeholder:text-slate-600 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500/30 transition-all"
-                   placeholder="请输入用户名">
-          </div>
-          <div>
-            <label class="block text-slate-400 text-xs font-medium mb-1.5">密码</label>
-            <input id="inp-pass" type="password" required
-                   class="w-full bg-slate-900/60 border border-slate-700/50 rounded-xl px-4 py-2.5 text-white text-sm
-                          placeholder:text-slate-600 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500/30 transition-all"
-                   placeholder="请输入密码">
-          </div>
+        <div class="mb-4">
+          <label class="block text-slate-400 text-xs font-medium mb-1.5">用户名</label>
+          <input id="inp-user" type="text" required placeholder="请输入用户名"
+                 class="input-focus w-full bg-white/[0.06] border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 outline-none transition-all">
         </div>
-
-        <p id="login-error" class="text-red-400 text-xs mt-3 hidden"></p>
-
+        <div class="mb-5">
+          <label class="block text-slate-400 text-xs font-medium mb-1.5">密码</label>
+          <input id="inp-pass" type="password" required placeholder="请输入密码"
+                 class="input-focus w-full bg-white/[0.06] border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 outline-none transition-all">
+        </div>
+        <p id="login-error" class="text-red-400 text-xs mb-3 hidden"></p>
         <button id="btn-login" type="submit"
-                class="w-full mt-6 bg-brand-600 hover:bg-brand-500 text-white font-medium py-2.5 rounded-xl
-                       transition-colors shadow-lg shadow-brand-600/20 flex items-center justify-center gap-2">
-          <span id="btn-text">登 录</span>
-          <svg id="btn-spinner" class="hidden w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
-          </svg>
+                class="w-full bg-brand-600 hover:bg-brand-500 text-white font-medium py-3 rounded-xl transition-all shadow-lg shadow-brand-600/25 active:scale-[0.98]">
+          登 录
         </button>
       </form>
     </div>
 
-    <p class="text-center text-slate-600 text-xs mt-6">Android Shell Protector v2.0</p>
+    <p class="text-center text-slate-600 text-[10px] mt-6">Shell Protector v2.0 &mdash; 22 层纵深防御体系</p>
   </div>
 
 <script>
-(function() {
-  var form = document.getElementById('login-form');
-  var errEl = document.getElementById('login-error');
-  var card = document.getElementById('login-card');
-  var btnText = document.getElementById('btn-text');
-  var btnSpinner = document.getElementById('btn-spinner');
-  var btn = document.getElementById('btn-login');
+(function(){
+  const form = document.getElementById('login-form');
+  const err  = document.getElementById('login-error');
+  const btn  = document.getElementById('btn-login');
 
-  if (localStorage.getItem('token')) {
-    window.location.href = '/';
-    return;
-  }
-
-  form.addEventListener('submit', async function(e) {
+  form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    errEl.classList.add('hidden');
+    err.classList.add('hidden');
     btn.disabled = true;
-    btnText.textContent = '登录中...';
-    btnSpinner.classList.remove('hidden');
+    btn.textContent = '登录中...';
 
     try {
-      var res = await fetch('/api/login', {
+      const res = await fetch('/api/login', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({
           username: document.getElementById('inp-user').value.trim(),
           password: document.getElementById('inp-pass').value,
         }),
       });
-      var data = await res.json();
+      const data = await res.json();
       if (!res.ok) throw new Error(data.detail || '登录失败');
       localStorage.setItem('token', data.token);
       window.location.href = '/';
-    } catch (err) {
-      errEl.textContent = err.message;
-      errEl.classList.remove('hidden');
-      card.classList.add('shake');
-      setTimeout(function(){ card.classList.remove('shake'); }, 500);
+    } catch (ex) {
+      err.textContent = ex.message;
+      err.classList.remove('hidden');
     } finally {
       btn.disabled = false;
-      btnText.textContent = '登 录';
-      btnSpinner.classList.add('hidden');
+      btn.textContent = '登 录';
     }
   });
 })();

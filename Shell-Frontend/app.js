@@ -1,5 +1,5 @@
 /**
- * Android Shell Protector — 统一前端
+ * Android Shell Protector — 安全管理平台前端
  */
 
 const API = "";
@@ -8,14 +8,14 @@ const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
 
 // ═══════════════════════════════════════════════════════════════
-//  认证 Token 管理
+//  Token & Auth
 // ═══════════════════════════════════════════════════════════════
 
 function getToken() { return localStorage.getItem("token"); }
 
 function authHeaders() {
   const t = getToken();
-  return t ? { "Authorization": "Bearer " + t } : {};
+  return t ? { Authorization: "Bearer " + t } : {};
 }
 
 async function authFetch(url, opts = {}) {
@@ -25,75 +25,201 @@ async function authFetch(url, opts = {}) {
   return res;
 }
 
-function logout() {
-  localStorage.removeItem("token");
-  window.location.href = "/login";
-}
+function logout() { localStorage.removeItem("token"); window.location.href = "/login"; }
 
 // ═══════════════════════════════════════════════════════════════
-//  标签页切换
+//  Tab Switching
 // ═══════════════════════════════════════════════════════════════
 
-const tabPanels = { harden: $("#tab-harden"), history: $("#tab-history"), protection: $("#tab-protection"), risk: $("#tab-risk"), system: $("#tab-system") };
+const tabPanels = {};
+["dashboard","harden","history","protection","risk","system"].forEach(t => { tabPanels[t] = $("#tab-" + t); });
 const navButtons = $$(".nav-item[data-tab]");
 let adminLoaded = false;
+let dashboardLoaded = false;
 
 function switchTab(name) {
-  Object.entries(tabPanels).forEach(([k, el]) => {
-    if (!el) return;
-    el.style.display = (k === name) ? "" : "none";
-  });
-  navButtons.forEach(btn => {
-    const active = btn.dataset.tab === name;
-    btn.classList.toggle("active", active);
-    btn.classList.toggle("text-slate-400", !active);
-  });
+  Object.entries(tabPanels).forEach(([k, el]) => { if (el) el.style.display = k === name ? "" : "none"; });
+  navButtons.forEach(btn => { const a = btn.dataset.tab === name; btn.classList.toggle("active", a); btn.classList.toggle("text-slate-400", !a); });
+  if (name === "dashboard" && !dashboardLoaded) { dashboardLoaded = true; loadDashboard(); }
   if (name === "history") loadHistory();
   if (name === "risk") loadRiskData();
-  if ((name === "protection" || name === "system") && !adminLoaded) {
-    adminLoaded = true;
-    loadAdminData();
-  }
+  if ((name === "protection" || name === "system") && !adminLoaded) { adminLoaded = true; loadAdminData(); }
+  if (name === "system") loadDbStatus();
 }
 
 navButtons.forEach(btn => btn.addEventListener("click", () => switchTab(btn.dataset.tab)));
 
-switchTab("harden");
+// ═══════════════════════════════════════════════════════════════
+//  ECharts Dark Theme Defaults
+// ═══════════════════════════════════════════════════════════════
+
+const EC_TEXT = "#94a3b8";
+const EC_LINE = "#334155";
+const EC_COLORS = ["#818cf8","#34d399","#fbbf24","#f87171","#a78bfa","#38bdf8","#fb923c"];
+
+function ecBase() {
+  return {
+    textStyle: { color: EC_TEXT, fontFamily: "-apple-system,BlinkMacSystemFont,sans-serif" },
+    legend: { textStyle: { color: EC_TEXT, fontSize: 11 } },
+  };
+}
 
 // ═══════════════════════════════════════════════════════════════
-//  加固页面逻辑
+//  1. Dashboard
+// ═══════════════════════════════════════════════════════════════
+
+async function loadDashboard() {
+  try {
+    const res = await authFetch(`${API}/api/dashboard/stats`);
+    const d = await res.json();
+
+    $("#dash-tasks").textContent = d.tasks.total;
+    $("#dash-rate").textContent = d.tasks.success_rate + "%";
+    $("#dash-risk").textContent = d.risk.total;
+    $("#dash-layers").textContent = d.protection_layers;
+
+    renderTrendChart(d.trend);
+    renderRiskPie(d.risk);
+    renderRadarChart();
+    renderEncFlow();
+    renderAlerts(d.recent_alerts);
+  } catch (e) { console.error("Dashboard load failed:", e); }
+}
+
+function renderTrendChart(trend) {
+  const chart = echarts.init($("#chart-trend"));
+  const dates = Object.keys(trend).map(d => d.slice(5));
+  const completed = Object.values(trend).map(v => v.completed);
+  const failed = Object.values(trend).map(v => v.failed);
+  chart.setOption({
+    ...ecBase(),
+    color: ["#34d399", "#f87171"],
+    tooltip: { trigger: "axis", backgroundColor: "#1e293b", borderColor: "#334155", textStyle: { color: "#e2e8f0", fontSize: 12 } },
+    grid: { top: 30, right: 20, bottom: 30, left: 40 },
+    xAxis: { type: "category", data: dates, axisLine: { lineStyle: { color: EC_LINE } }, axisLabel: { color: EC_TEXT, fontSize: 11 } },
+    yAxis: { type: "value", minInterval: 1, splitLine: { lineStyle: { color: EC_LINE, type: "dashed" } }, axisLabel: { color: EC_TEXT, fontSize: 11 } },
+    legend: { data: ["成功", "失败"], right: 0, top: 0, textStyle: { color: EC_TEXT, fontSize: 11 } },
+    series: [
+      { name: "成功", type: "line", data: completed, smooth: true, symbol: "circle", symbolSize: 6, areaStyle: { color: new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:"rgba(52,211,153,.25)"},{offset:1,color:"rgba(52,211,153,0)"}]) } },
+      { name: "失败", type: "line", data: failed, smooth: true, symbol: "circle", symbolSize: 6, areaStyle: { color: new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:"rgba(248,113,113,.2)"},{offset:1,color:"rgba(248,113,113,0)"}]) } },
+    ],
+  });
+  window.addEventListener("resize", () => chart.resize());
+}
+
+function renderRiskPie(risk) {
+  const chart = echarts.init($("#chart-risk-pie"));
+  const total = risk.total || 0;
+  chart.setOption({
+    ...ecBase(),
+    color: ["#f87171","#fbbf24","#34d399"],
+    tooltip: { trigger: "item", backgroundColor: "#1e293b", borderColor: "#334155", textStyle: { color: "#e2e8f0", fontSize: 12 } },
+    graphic: [{ type: "text", left: "center", top: "42%", style: { text: total.toString(), fontSize: 28, fontWeight: "bold", fill: "#fff", textAlign: "center" } }, { type: "text", left: "center", top: "56%", style: { text: "总上报", fontSize: 11, fill: "#94a3b8", textAlign: "center" } }],
+    series: [{
+      type: "pie", radius: ["55%","78%"], center: ["50%","50%"],
+      label: { color: EC_TEXT, fontSize: 11, formatter: "{b}\n{c}" },
+      data: [
+        { value: risk.high, name: "高危" },
+        { value: risk.medium, name: "中危" },
+        { value: risk.low, name: "低危/安全" },
+      ],
+      itemStyle: { borderRadius: 6, borderColor: "#0f172a", borderWidth: 3 },
+    }],
+  });
+  window.addEventListener("resize", () => chart.resize());
+}
+
+function renderRadarChart() {
+  const chart = echarts.init($("#chart-radar"));
+  chart.setOption({
+    ...ecBase(),
+    color: ["#818cf8"],
+    radar: {
+      indicator: [
+        { name: "进程级", max: 6 },
+        { name: "环境级", max: 6 },
+        { name: "工具级", max: 6 },
+        { name: "代码级", max: 8 },
+        { name: "Java层", max: 6 },
+      ],
+      shape: "polygon",
+      splitNumber: 4,
+      axisName: { color: EC_TEXT, fontSize: 11 },
+      splitLine: { lineStyle: { color: EC_LINE } },
+      splitArea: { areaStyle: { color: ["rgba(99,102,241,.03)","rgba(99,102,241,.06)"] } },
+      axisLine: { lineStyle: { color: EC_LINE } },
+    },
+    series: [{
+      type: "radar",
+      data: [{ value: [4, 5, 3, 7, 3], name: "防护层分布" }],
+      areaStyle: { color: "rgba(129,140,248,.15)" },
+      lineStyle: { width: 2 },
+      symbol: "circle", symbolSize: 5,
+    }],
+  });
+  window.addEventListener("resize", () => chart.resize());
+}
+
+function renderEncFlow() {
+  const steps = [
+    { icon: "M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z", title: "AES-128-CBC", desc: "每包随机 16 字节密钥" },
+    { icon: "M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z", title: "HMAC-SHA256", desc: "密文完整性校验" },
+    { icon: "M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01", title: "设备绑定", desc: "ANDROID_ID + 签名哈希" },
+    { icon: "M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16", title: "内存清理", desc: "Arrays.fill + madvise" },
+  ];
+  const container = $("#dash-enc-flow");
+  container.innerHTML = steps.map((s, i) => `
+    <div class="flex items-center gap-3 bg-slate-900/40 rounded-xl p-3">
+      <div class="w-9 h-9 rounded-lg bg-brand-600/15 flex items-center justify-center shrink-0">
+        <svg class="w-4.5 h-4.5 text-brand-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="${s.icon}"/></svg>
+      </div>
+      <div class="min-w-0">
+        <p class="text-white text-sm font-medium">${s.title}</p>
+        <p class="text-slate-500 text-xs">${s.desc}</p>
+      </div>
+    </div>`).join("");
+}
+
+function renderAlerts(alerts) {
+  const container = $("#dash-alerts");
+  if (!alerts || alerts.length === 0) {
+    container.innerHTML = '<p class="text-slate-500 text-xs py-4 text-center">暂无告警记录</p>';
+    return;
+  }
+  container.innerHTML = alerts.map(a => {
+    const colors = { HIGH: "text-red-400 bg-red-500/10", CRITICAL: "text-red-400 bg-red-500/10", MEDIUM: "text-amber-400 bg-amber-500/10", LOW: "text-emerald-400 bg-emerald-500/10" };
+    const c = colors[a.risk_level] || "text-slate-400 bg-slate-500/10";
+    const t = a.created_at ? a.created_at.replace("T"," ").slice(0,16) : "-";
+    return `<div class="flex items-center gap-3 p-3 rounded-xl bg-slate-900/40">
+      <div class="w-8 h-8 rounded-lg ${c} flex items-center justify-center text-xs font-bold">${a.risk_score || 0}</div>
+      <div class="flex-1 min-w-0">
+        <p class="text-white text-sm truncate">${a.device_fingerprint || "unknown"}</p>
+        <p class="text-slate-500 text-[11px]">${t}</p>
+      </div>
+      <span class="tag ${c.replace('bg-','bg-').replace('/10','/15')}">${a.risk_level}</span>
+    </div>`;
+  }).join("");
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  2. APK 加固
 // ═══════════════════════════════════════════════════════════════
 
 const dom = {
-  sectionUpload:   $("#section-upload"),
-  sectionProgress: $("#section-progress"),
-  sectionResult:   $("#section-result"),
-  dropZone:        $("#drop-zone"),
-  fileInput:       $("#file-input"),
-  uploadError:     $("#upload-error"),
-  progressBar:     $("#progress-bar"),
-  progressPercent: $("#progress-percent"),
-  progressFile:    $("#progress-filename"),
-  progressMsg:     $("#progress-message"),
-  btnToggleLog:    $("#btn-toggle-log"),
-  logBox:          $("#log-box"),
-  resultSuccess:   $("#result-success"),
-  resultFail:      $("#result-fail"),
-  resultFilename:  $("#result-filename"),
-  failMessage:     $("#fail-message"),
-  btnDownload:     $("#btn-download"),
-  btnRestart:      $("#btn-restart"),
-  btnRetry:        $("#btn-retry"),
-  historyList:     $("#history-list"),
-  historyEmpty:    $("#history-empty"),
-  historyCount:    $("#history-count"),
-  btnRefresh:      $("#btn-refresh"),
-  btnClearAll:     $("#btn-clear-all"),
+  sectionUpload: $("#section-upload"), sectionProgress: $("#section-progress"), sectionResult: $("#section-result"),
+  dropZone: $("#drop-zone"), fileInput: $("#file-input"), uploadError: $("#upload-error"),
+  progressBar: $("#progress-bar"), progressPercent: $("#progress-percent"),
+  progressFile: $("#progress-filename"), progressMsg: $("#progress-message"),
+  btnToggleLog: $("#btn-toggle-log"), logBox: $("#log-box"),
+  resultSuccess: $("#result-success"), resultFail: $("#result-fail"),
+  resultFilename: $("#result-filename"), resultCompare: $("#result-compare"),
+  failMessage: $("#fail-message"), btnDownload: $("#btn-download"),
+  btnRestart: $("#btn-restart"), btnRetry: $("#btn-retry"),
+  historyList: $("#history-list"), historyEmpty: $("#history-empty"),
+  historyCount: $("#history-count"), btnRefresh: $("#btn-refresh"), btnClearAll: $("#btn-clear-all"),
 };
 
-let taskId = null;
-let pollTimer = null;
-let logVisible = false;
+let taskId = null, pollTimer = null, logVisible = false, uploadStartTime = 0;
 
 function showSection(name) {
   dom.sectionUpload.classList.toggle("hidden", name !== "upload");
@@ -114,7 +240,35 @@ function resetAll() {
   dom.resultSuccess.classList.add("hidden");
   dom.resultFail.classList.add("hidden");
   dom.fileInput.value = "";
+  updateStepBar(-1);
   showSection("upload");
+}
+
+function updateStepBar(activeIdx) {
+  const steps = $$("#step-bar [data-step]");
+  const lines = $$("#step-bar .step-line");
+  steps.forEach((el, i) => {
+    const dot = el.querySelector(".step-dot");
+    if (i < activeIdx) {
+      dot.className = "step-dot bg-brand-600 text-white";
+    } else if (i === activeIdx) {
+      dot.className = "step-dot bg-brand-500 text-white ring-2 ring-brand-400/40";
+    } else {
+      dot.className = "step-dot bg-slate-700 text-slate-400";
+    }
+  });
+  lines.forEach((el, i) => {
+    el.className = "step-line " + (i < activeIdx ? "bg-brand-500" : "bg-slate-700");
+  });
+}
+
+function progressToStep(pct) {
+  if (pct >= 100) return 4;
+  if (pct >= 80) return 3;
+  if (pct >= 70) return 2;
+  if (pct >= 20) return 1;
+  if (pct >= 5) return 0;
+  return -1;
 }
 
 function handleFile(file) {
@@ -127,11 +281,16 @@ function handleFile(file) {
   uploadFile(file);
 }
 
+let uploadFileSize = 0;
+
 async function uploadFile(file) {
   dom.progressFile.textContent = file.name;
   dom.progressMsg.textContent = "正在上传...";
   dom.progressBar.style.width = "5%";
   dom.progressPercent.textContent = "5%";
+  uploadFileSize = file.size;
+  uploadStartTime = Date.now();
+  updateStepBar(0);
   showSection("progress");
   const form = new FormData();
   form.append("file", file);
@@ -159,6 +318,7 @@ async function poll() {
     dom.progressBar.style.width = pct + "%";
     dom.progressPercent.textContent = pct + "%";
     dom.progressMsg.textContent = data.message || "";
+    updateStepBar(progressToStep(pct));
     if (logVisible) await fetchLogs();
     if (data.status === "completed") {
       clearInterval(pollTimer); pollTimer = null; await fetchLogs(); showCompleted(data);
@@ -179,6 +339,16 @@ async function fetchLogs() {
 
 function showCompleted(data) {
   dom.resultFilename.textContent = data.filename;
+  const elapsed = ((Date.now() - uploadStartTime) / 1000).toFixed(1);
+  dom.resultCompare.innerHTML = `
+    <div class="bg-slate-900/50 rounded-xl p-4 text-center">
+      <p class="text-slate-500 text-xs mb-1">原始大小</p>
+      <p class="text-white font-bold">${formatSize(uploadFileSize)}</p>
+    </div>
+    <div class="bg-slate-900/50 rounded-xl p-4 text-center">
+      <p class="text-slate-500 text-xs mb-1">加固耗时</p>
+      <p class="text-white font-bold">${elapsed}s</p>
+    </div>`;
   dom.btnDownload.href = "#";
   dom.btnDownload.onclick = async (e) => {
     e.preventDefault();
@@ -187,11 +357,8 @@ function showCompleted(data) {
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = url;
-      a.download = `protected_${data.filename}`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
+      a.href = url; a.download = `protected_${data.filename}`;
+      document.body.appendChild(a); a.click(); a.remove();
       URL.revokeObjectURL(url);
     } catch (_) {}
   };
@@ -207,7 +374,20 @@ function showFailed(data) {
   showSection("result");
 }
 
-// ── 历史记录 ──
+dom.dropZone.addEventListener("click", () => dom.fileInput.click());
+dom.fileInput.addEventListener("change", (e) => handleFile(e.target.files[0]));
+dom.dropZone.addEventListener("dragover", (e) => { e.preventDefault(); dom.dropZone.classList.add("drag-over"); });
+dom.dropZone.addEventListener("dragleave", () => dom.dropZone.classList.remove("drag-over"));
+dom.dropZone.addEventListener("drop", (e) => { e.preventDefault(); dom.dropZone.classList.remove("drag-over"); handleFile(e.dataTransfer.files[0]); });
+dom.btnToggleLog.addEventListener("click", () => { logVisible = !logVisible; dom.logBox.classList.toggle("hidden", !logVisible); if (logVisible) fetchLogs(); });
+dom.btnRestart.addEventListener("click", resetAll);
+dom.btnRetry.addEventListener("click", resetAll);
+
+// ═══════════════════════════════════════════════════════════════
+//  3. History
+// ═══════════════════════════════════════════════════════════════
+
+let currentFilter = "all";
 
 function formatTime(ts) {
   const d = new Date(ts * 1000);
@@ -215,6 +395,7 @@ function formatTime(ts) {
   return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 function formatSize(bytes) {
+  if (!bytes || bytes <= 0) return "-";
   if (bytes < 1024) return bytes + " B";
   if (bytes < 1048576) return (bytes / 1024).toFixed(1) + " KB";
   return (bytes / 1048576).toFixed(1) + " MB";
@@ -229,32 +410,36 @@ async function loadHistory() {
   try {
     const res = await authFetch(`${API}/api/tasks`);
     const data = await res.json();
-    const tasks = data.tasks || [];
+    let tasks = data.tasks || [];
     dom.historyCount.textContent = tasks.length > 0 ? `(${tasks.length})` : "";
+
+    if (currentFilter !== "all") tasks = tasks.filter(t => t.status === currentFilter);
+
     if (tasks.length === 0) {
       dom.historyEmpty.classList.remove("hidden");
-      const t = dom.historyList.querySelector("table"); if (t) t.remove();
+      dom.historyList.innerHTML = "";
       return;
     }
     dom.historyEmpty.classList.add("hidden");
     let html = `<table class="w-full text-sm"><thead><tr class="text-slate-500 text-xs border-b border-slate-700/40">
-      <th class="text-left py-2 px-4 font-medium">文件名</th><th class="text-left py-2 px-4 font-medium">状态</th>
-      <th class="text-left py-2 px-4 font-medium">时间</th><th class="text-right py-2 px-4 font-medium">大小</th>
-      <th class="text-right py-2 px-4 font-medium">操作</th></tr></thead><tbody>`;
-    for (const t of tasks) {
+      <th class="text-left py-3 px-4 font-medium w-10">#</th>
+      <th class="text-left py-3 px-4 font-medium">文件名</th><th class="text-left py-3 px-4 font-medium">状态</th>
+      <th class="text-left py-3 px-4 font-medium">时间</th><th class="text-right py-3 px-4 font-medium">大小</th>
+      <th class="text-right py-3 px-4 font-medium">操作</th></tr></thead><tbody>`;
+    tasks.forEach((t, idx) => {
       const a = [];
       if (t.status === "completed" && t.has_output) a.push(`<button onclick="downloadTask('${t.task_id}','${t.filename}')" class="text-emerald-400 hover:text-emerald-300 transition-colors">下载</button>`);
       a.push(`<button onclick="deleteTask('${t.task_id}')" class="text-red-400/70 hover:text-red-300 transition-colors">删除</button>`);
       html += `<tr class="task-row border-b border-slate-700/20">
-        <td class="py-2.5 px-4 text-slate-300 truncate max-w-[180px]" title="${t.filename}">${t.filename}</td>
-        <td class="py-2.5 px-4">${statusBadge(t.status)}</td>
-        <td class="py-2.5 px-4 text-slate-500 text-xs">${formatTime(t.created_at)}</td>
-        <td class="py-2.5 px-4 text-slate-500 text-xs text-right">${t.has_output ? formatSize(t.output_size) : "-"}</td>
-        <td class="py-2.5 px-4 text-right space-x-3 text-xs">${a.join("")}</td></tr>`;
-    }
+        <td class="py-3 px-4 text-slate-600 text-xs">${idx+1}</td>
+        <td class="py-3 px-4 text-slate-300 truncate max-w-[200px]" title="${t.filename}">${t.filename}</td>
+        <td class="py-3 px-4">${statusBadge(t.status)}</td>
+        <td class="py-3 px-4 text-slate-500 text-xs">${formatTime(t.created_at)}</td>
+        <td class="py-3 px-4 text-slate-500 text-xs text-right">${t.has_output ? formatSize(t.output_size) : "-"}</td>
+        <td class="py-3 px-4 text-right space-x-3 text-xs">${a.join("")}</td></tr>`;
+    });
     html += `</tbody></table>`;
-    const ex = dom.historyList.querySelector("table"); if (ex) ex.remove();
-    dom.historyList.insertAdjacentHTML("beforeend", html);
+    dom.historyList.innerHTML = html;
   } catch (_) {}
 }
 
@@ -264,11 +449,8 @@ async function downloadTask(tid, filename) {
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url;
-    a.download = `protected_${filename}`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+    a.href = url; a.download = `protected_${filename}`;
+    document.body.appendChild(a); a.click(); a.remove();
     URL.revokeObjectURL(url);
   } catch (_) {}
 }
@@ -282,157 +464,194 @@ async function clearAllTasks() {
   try { await authFetch(`${API}/api/tasks`, { method: "DELETE" }); loadHistory(); } catch (_) {}
 }
 
-// ── 事件绑定 ──
+$$(".filter-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    $$(".filter-btn").forEach(b => { b.classList.remove("active","bg-brand-500/15","text-brand-300"); b.classList.add("bg-slate-700/40","text-slate-400"); });
+    btn.classList.add("active","bg-brand-500/15","text-brand-300");
+    btn.classList.remove("bg-slate-700/40","text-slate-400");
+    currentFilter = btn.dataset.filter;
+    loadHistory();
+  });
+});
 
-dom.dropZone.addEventListener("click", () => dom.fileInput.click());
-dom.fileInput.addEventListener("change", (e) => handleFile(e.target.files[0]));
-dom.dropZone.addEventListener("dragover", (e) => { e.preventDefault(); dom.dropZone.classList.add("drag-over"); });
-dom.dropZone.addEventListener("dragleave", () => dom.dropZone.classList.remove("drag-over"));
-dom.dropZone.addEventListener("drop", (e) => { e.preventDefault(); dom.dropZone.classList.remove("drag-over"); handleFile(e.dataTransfer.files[0]); });
-dom.btnToggleLog.addEventListener("click", () => { logVisible = !logVisible; dom.logBox.classList.toggle("hidden", !logVisible); if (logVisible) fetchLogs(); });
-dom.btnRestart.addEventListener("click", resetAll);
-dom.btnRetry.addEventListener("click", resetAll);
 dom.btnRefresh.addEventListener("click", loadHistory);
 dom.btnClearAll.addEventListener("click", clearAllTasks);
 
-loadHistory();
+// ═══════════════════════════════════════════════════════════════
+//  4. Protection System
+// ═══════════════════════════════════════════════════════════════
 
-// ═══════════════════════════════════════════════════════════════
-//  管理后台数据加载
-// ═══════════════════════════════════════════════════════════════
+const TYPE_COLORS = {
+  "进程级": { bg: "bg-red-500/10", text: "text-red-400", border: "border-red-500/20", tag: "bg-red-500/15 text-red-300", hex: "#f87171" },
+  "环境级": { bg: "bg-amber-500/10", text: "text-amber-400", border: "border-amber-500/20", tag: "bg-amber-500/15 text-amber-300", hex: "#fbbf24" },
+  "工具级": { bg: "bg-purple-500/10", text: "text-purple-400", border: "border-purple-500/20", tag: "bg-purple-500/15 text-purple-300", hex: "#a78bfa" },
+  "代码级": { bg: "bg-cyan-500/10", text: "text-cyan-400", border: "border-cyan-500/20", tag: "bg-cyan-500/15 text-cyan-300", hex: "#22d3ee" },
+  "Java层": { bg: "bg-blue-500/10", text: "text-blue-400", border: "border-blue-500/20", tag: "bg-blue-500/15 text-blue-300", hex: "#60a5fa" },
+};
+const MODE_COLORS = { "启动时":"bg-slate-600/40 text-slate-300", "后台线程":"bg-emerald-500/15 text-emerald-300", "独立进程":"bg-orange-500/15 text-orange-300", "关键段":"bg-pink-500/15 text-pink-300" };
 
 async function loadAdminData() {
   try {
     const res = await authFetch(`${API}/api/admin/info`);
     const d = await res.json();
-
     const allLayers = [...d.anti_debug.native_layers, ...d.anti_debug.java_layers];
 
-    // Stats
-    $("#stat-layers").textContent = allLayers.length;
-    $("#stat-lines").textContent = d.stats.total_code_lines.toLocaleString();
-    $("#stat-tasks").textContent = `${d.stats.completed}/${d.stats.total_tasks}`;
-    $("#stat-abis").textContent = d.components.native.abis.length;
+    renderProtection(d, allLayers);
+    renderSystemPage(d);
+  } catch (e) { console.error("Admin load failed:", e); }
+}
 
-    // Anti-debug layers
-    $("#debug-count").textContent = `Native ${d.anti_debug.native_layers.length} 层 + Java ${d.anti_debug.java_layers.length} 层`;
+function renderProtection(d, allLayers) {
+  const groups = {};
+  allLayers.forEach(l => { (groups[l.type] = groups[l.type] || []).push(l); });
 
-    const typeColors = { '进程级':'bg-red-500/15 text-red-300', '环境级':'bg-amber-500/15 text-amber-300', '工具级':'bg-purple-500/15 text-purple-300', '代码级':'bg-cyan-500/15 text-cyan-300', 'Java层':'bg-blue-500/15 text-blue-300' };
-    const modeColors = { '启动时':'bg-slate-600/40 text-slate-300', '后台线程':'bg-emerald-500/15 text-emerald-300', '独立进程':'bg-orange-500/15 text-orange-300', '关键段':'bg-pink-500/15 text-pink-300' };
+  // Category stats
+  const catHtml = Object.entries(TYPE_COLORS).map(([type, c]) => {
+    const count = (groups[type] || []).length;
+    return `<div class="stat-card ${c.bg} border ${c.border} rounded-2xl p-4 text-center">
+      <p class="${c.text} text-2xl font-bold">${count}</p>
+      <p class="text-slate-500 text-xs mt-1">${type}</p>
+    </div>`;
+  }).join("");
+  $("#prot-category-stats").innerHTML = catHtml;
 
-    const layersHtml = allLayers.map(l => `
-      <div class="layer-row px-5 py-3 flex items-start gap-3">
-        <div class="w-7 h-7 rounded-lg bg-slate-700/50 flex items-center justify-center text-[11px] font-bold text-white shrink-0 mt-0.5">${l.id}</div>
+  // Protection pie chart
+  const protPie = echarts.init($("#chart-prot-pie"));
+  protPie.setOption({
+    ...ecBase(),
+    color: Object.values(TYPE_COLORS).map(c => c.hex),
+    tooltip: { trigger: "item", backgroundColor: "#1e293b", borderColor: "#334155", textStyle: { color: "#e2e8f0", fontSize: 12 } },
+    series: [{
+      type: "pie", radius: ["45%","72%"],
+      label: { color: EC_TEXT, fontSize: 11, formatter: "{b}: {c}层" },
+      data: Object.entries(groups).map(([t, ls]) => ({ value: ls.length, name: t })),
+      itemStyle: { borderRadius: 5, borderColor: "#0f172a", borderWidth: 3 },
+    }],
+  });
+  window.addEventListener("resize", () => protPie.resize());
+
+  // Mode pie chart
+  const modeGroups = {};
+  allLayers.forEach(l => { (modeGroups[l.mode] = modeGroups[l.mode] || []).push(l); });
+  const modePie = echarts.init($("#chart-mode-pie"));
+  modePie.setOption({
+    ...ecBase(),
+    color: ["#818cf8","#34d399","#fb923c","#f472b6"],
+    tooltip: { trigger: "item", backgroundColor: "#1e293b", borderColor: "#334155", textStyle: { color: "#e2e8f0", fontSize: 12 } },
+    series: [{
+      type: "pie", radius: ["45%","72%"],
+      label: { color: EC_TEXT, fontSize: 11, formatter: "{b}: {c}层" },
+      data: Object.entries(modeGroups).map(([m, ls]) => ({ value: ls.length, name: m })),
+      itemStyle: { borderRadius: 5, borderColor: "#0f172a", borderWidth: 3 },
+    }],
+  });
+  window.addEventListener("resize", () => modePie.resize());
+
+  // Architecture flow
+  const archSteps = [
+    { label: "原始 APK", sub: "上传到服务端", color: "bg-slate-600" },
+    { label: "DEX 提取", sub: "解压 classes*.dex", color: "bg-blue-600" },
+    { label: "AES-128-CBC\n加密", sub: "每包随机密钥", color: "bg-brand-600" },
+    { label: "HMAC-SHA256\n签名", sub: "密文完整性", color: "bg-purple-600" },
+    { label: "清单修改", sub: "注入壳 Application", color: "bg-cyan-600" },
+    { label: "重打包", sub: "注入壳 DEX + SO", color: "bg-amber-600" },
+    { label: "签名 & 对齐", sub: "apksigner v2", color: "bg-emerald-600" },
+    { label: "加固 APK", sub: "分发 / 下载", color: "bg-emerald-500" },
+  ];
+  $("#prot-arch-flow").innerHTML = archSteps.map((s, i) => {
+    const arrow = i < archSteps.length - 1 ? `<svg class="w-6 h-6 text-slate-600 shrink-0 mx-1" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>` : "";
+    return `<div class="flex items-center shrink-0">
+      <div class="w-28 ${s.color}/15 border ${s.color.replace("bg-","border-")}/25 rounded-xl p-3 text-center">
+        <p class="text-white text-xs font-medium whitespace-pre-line leading-tight">${s.label}</p>
+        <p class="text-slate-500 text-[10px] mt-1">${s.sub}</p>
+      </div>
+      ${arrow}
+    </div>`;
+  }).join("");
+
+  // Encryption pipeline
+  const encSteps = [
+    { title: "算法", val: d.encryption.algorithm, icon: "M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" },
+    { title: "密钥策略", val: d.encryption.key_mode, icon: "M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" },
+    { title: "完整性", val: d.encryption.integrity, icon: "M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" },
+    { title: "DEX 校验", val: d.encryption.dex_verify, icon: "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" },
+    { title: "内存清理", val: d.encryption.memory_cleanup, icon: "M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" },
+    { title: "密钥存储", val: d.encryption.key_storage, icon: "M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" },
+    { title: "设备绑定", val: d.encryption.device_bind, icon: "M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" },
+    { title: "数据格式", val: d.encryption.format, icon: "M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" },
+  ];
+  $("#prot-enc-pipeline").innerHTML = encSteps.map(s => `
+    <div class="bg-slate-900/50 rounded-xl p-4">
+      <div class="flex items-center gap-2 mb-2">
+        <div class="w-7 h-7 rounded-lg bg-brand-600/15 flex items-center justify-center">
+          <svg class="w-3.5 h-3.5 text-brand-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="${s.icon}"/></svg>
+        </div>
+        <span class="text-slate-500 text-[11px]">${s.title}</span>
+      </div>
+      <p class="text-white text-xs font-medium leading-relaxed">${s.val}</p>
+    </div>`).join("");
+
+  // Grouped layers
+  $("#prot-layer-count").textContent = `Native ${d.anti_debug.native_layers.length} 层 + Java ${d.anti_debug.java_layers.length} 层`;
+
+  let groupsHtml = "";
+  const typeOrder = ["进程级","环境级","工具级","代码级","Java层"];
+  typeOrder.forEach(type => {
+    const layers = groups[type];
+    if (!layers) return;
+    const c = TYPE_COLORS[type];
+    groupsHtml += `<div class="border-b border-slate-700/20">
+      <div class="group-header px-5 py-3 flex items-center justify-between ${c.bg}" onclick="this.nextElementSibling.classList.toggle('hidden')">
+        <div class="flex items-center gap-2">
+          <span class="tag ${c.tag}">${type}</span>
+          <span class="text-white text-sm font-medium">${layers.length} 层防护</span>
+        </div>
+        <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+      </div>
+      <div class="divide-y divide-slate-700/15">`;
+    layers.forEach(l => {
+      groupsHtml += `<div class="px-5 py-3 flex items-start gap-3">
+        <div class="w-7 h-7 rounded-lg ${c.bg} flex items-center justify-center text-[11px] font-bold ${c.text} shrink-0 mt-0.5">${l.id}</div>
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-2 flex-wrap">
             <span class="text-white text-sm font-medium">${l.name}</span>
-            <span class="tag ${typeColors[l.type]||'bg-slate-600/40 text-slate-300'}">${l.type}</span>
-            <span class="tag ${modeColors[l.mode]||'bg-slate-600/40 text-slate-300'}">${l.mode}</span>
+            <span class="tag ${MODE_COLORS[l.mode] || 'bg-slate-600/40 text-slate-300'}">${l.mode}</span>
           </div>
           <p class="text-slate-400 text-xs mt-1 leading-relaxed">${l.desc}</p>
         </div>
         <div class="w-2 h-2 rounded-full bg-emerald-400 shrink-0 mt-2.5 animate-pulse" title="已启用"></div>
-      </div>`).join('');
-
-    $("#debug-layers").innerHTML = layersHtml +
-      `<div class="px-5 py-2.5 bg-slate-900/40 flex items-center gap-2 text-xs text-slate-400">
-         <svg class="w-3.5 h-3.5 text-red-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-         <span>触发响应：<span class="text-red-300">${d.anti_debug.response}</span></span>
-       </div>
-       <div class="px-5 py-2.5 bg-slate-900/40 border-t border-slate-700/20 flex items-center gap-2 text-xs text-slate-400">
-         <svg class="w-3.5 h-3.5 text-brand-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/></svg>
-         <span>符号隐藏：<span class="text-brand-300">${d.anti_debug.symbol_hiding}</span></span>
-       </div>`;
-
-    // Encryption
-    const encMap = { algorithm:'加密算法', key_mode:'密钥策略', integrity:'完整性校验', dex_verify:'DEX 校验', memory_cleanup:'内存清理', key_storage:'密钥存储', device_bind:'设备绑定' };
-    const encIcons = { algorithm:'🔐', key_mode:'🔑', integrity:'✅', dex_verify:'🔍', memory_cleanup:'🧹', key_storage:'📦', device_bind:'📱' };
-    $("#enc-grid").innerHTML = Object.entries(encMap).map(([k, label]) => `
-      <div class="bg-slate-900/40 rounded-xl p-3">
-        <div class="flex items-center gap-2 mb-1">
-          <span class="text-sm">${encIcons[k]||'•'}</span>
-          <span class="text-[11px] text-slate-500">${label}</span>
-        </div>
-        <p class="text-[13px] text-white font-medium leading-snug">${d.encryption[k]}</p>
-      </div>`).join('');
-
-    // Components
-    const compMap = { protector_tool:{name:'Protector-Tool',desc:'PC 端加壳工具 (Java 17)',icon:'☕'}, stub_app:{name:'Stub-App',desc:'设备端壳程序 (Android)',icon:'📱'}, native:{name:'Native Layer',desc:'C++ 反调试 + AES 解密 (NDK)',icon:'⚙️'}, web_server:{name:'Web Server',desc:'FastAPI 异步后端 (Python)',icon:'🌐'} };
-    $("#component-list").innerHTML = Object.entries(d.components).map(([k,v]) => {
-      const c = compMap[k];
-      return `<div class="flex items-center gap-3 p-2.5 rounded-xl ${v.ready?'bg-emerald-500/5':'bg-red-500/5'}">
-        <span class="text-lg">${c.icon}</span>
-        <div class="flex-1 min-w-0"><p class="text-white text-sm font-medium">${c.name}</p><p class="text-slate-500 text-[11px]">${c.desc}</p></div>
-        <div class="w-2 h-2 rounded-full ${v.ready?'bg-emerald-400':'bg-red-400'}"></div>
       </div>`;
-    }).join('');
+    });
+    groupsHtml += `</div></div>`;
+  });
+  $("#prot-groups").innerHTML = groupsHtml;
 
-    // Tools
-    const toolNames = { java:'Java (JDK 17)', apksigner:'apksigner', zipalign:'zipalign' };
-    $("#tools-list").innerHTML = Object.entries(d.tools).map(([k,ok]) => `
-      <div class="flex items-center justify-between py-1.5">
-        <span class="text-sm text-slate-300">${toolNames[k]||k}</span>
-        <span class="tag ${ok?'bg-emerald-500/15 text-emerald-300':'bg-red-500/15 text-red-300'}">${ok?'可用':'未找到'}</span>
-      </div>`).join('');
-
-    // Native libs
-    const soSizes = d.components.native.so_sizes || {};
-    if (Object.keys(soSizes).length) {
-      $("#native-list").innerHTML = Object.entries(soSizes).map(([abi,sz]) => `
-        <div class="flex items-center justify-between py-1.5">
-          <span class="text-sm font-mono text-slate-300">${abi}</span>
-          <span class="text-xs text-slate-500">${(sz/1024).toFixed(0)} KB</span>
-        </div>`).join('');
-    } else {
-      $("#native-list").innerHTML = '<p class="text-xs text-slate-500 py-2">未编译</p>';
-    }
-
-    // Source files
-    const allFiles = {};
-    for (const [,cv] of Object.entries(d.components)) { if (cv.files) Object.assign(allFiles, cv.files); }
-    const sorted = Object.entries(allFiles).sort((a,b) => b[1]-a[1]);
-    const maxL = sorted[0]?.[1] || 1;
-    $("#source-list").innerHTML = sorted.map(([name,lines]) => `
-      <div class="flex items-center gap-2">
-        <span class="text-xs text-slate-400 w-32 truncate font-mono" title="${name}">${name}</span>
-        <div class="flex-1 bg-slate-700/30 rounded-full h-1.5 overflow-hidden">
-          <div class="h-full rounded-full bg-gradient-to-r from-brand-500 to-cyan-500" style="width:${(lines/maxL*100).toFixed(0)}%"></div>
-        </div>
-        <span class="text-[11px] text-slate-500 w-10 text-right">${lines}</span>
-      </div>`).join('');
-
-  } catch (e) {
-    console.error("Failed to load admin data:", e);
-  }
+  // Response info
+  $("#prot-response").innerHTML = `
+    <div class="flex items-center gap-2 text-xs text-slate-400 mb-2">
+      <svg class="w-3.5 h-3.5 text-red-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+      <span>触发响应：<span class="text-red-300">${d.anti_debug.response}</span></span>
+    </div>
+    <div class="flex items-center gap-2 text-xs text-slate-400">
+      <svg class="w-3.5 h-3.5 text-brand-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/></svg>
+      <span>符号隐藏：<span class="text-brand-300">${d.anti_debug.symbol_hiding}</span></span>
+    </div>`;
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  设备风险模块
+//  5. Device Risk
 // ═══════════════════════════════════════════════════════════════
 
 function riskBadge(level) {
   const m = {
     CRITICAL: { t:"严重", c:"bg-red-600/20 text-red-300 border-red-500/30" },
-    HIGH:     { t:"高危", c:"bg-red-500/15 text-red-400 border-red-500/20" },
-    MEDIUM:   { t:"中危", c:"bg-amber-500/15 text-amber-400 border-amber-500/20" },
-    LOW:      { t:"低危", c:"bg-blue-500/15 text-blue-400 border-blue-500/20" },
-    NONE:     { t:"安全", c:"bg-emerald-500/15 text-emerald-400 border-emerald-500/20" },
+    HIGH: { t:"高危", c:"bg-red-500/15 text-red-400 border-red-500/20" },
+    MEDIUM: { t:"中危", c:"bg-amber-500/15 text-amber-400 border-amber-500/20" },
+    LOW: { t:"低危", c:"bg-blue-500/15 text-blue-400 border-blue-500/20" },
+    NONE: { t:"安全", c:"bg-emerald-500/15 text-emerald-400 border-emerald-500/20" },
   };
   const s = m[level] || { t: level || "未知", c:"bg-slate-500/15 text-slate-400 border-slate-500/20" };
   return `<span class="inline-block px-2 py-0.5 rounded border text-xs font-medium ${s.c}">${s.t}</span>`;
-}
-
-function scoreBar(score, max) {
-  const pct = max > 0 ? Math.min(100, (score / max) * 100) : 0;
-  let color = "from-emerald-500 to-emerald-400";
-  if (pct > 60) color = "from-red-500 to-red-400";
-  else if (pct > 30) color = "from-amber-500 to-amber-400";
-  return `<div class="flex items-center gap-2 w-28">
-    <div class="flex-1 bg-slate-700/30 rounded-full h-1.5 overflow-hidden">
-      <div class="h-full rounded-full bg-gradient-to-r ${color}" style="width:${pct.toFixed(0)}%"></div>
-    </div>
-    <span class="text-xs text-slate-400">${score}/${max}</span>
-  </div>`;
 }
 
 async function loadRiskData() {
@@ -453,51 +672,97 @@ async function loadRiskData() {
     const countEl = $("#risk-report-count");
     if (countEl) countEl.textContent = reports.length > 0 ? `(${reports.length})` : "";
 
+    // Risk detail pie
+    const riskPie = echarts.init($("#chart-risk-detail-pie"));
+    riskPie.setOption({
+      ...ecBase(),
+      color: ["#f87171","#fbbf24","#34d399"],
+      tooltip: { trigger: "item", backgroundColor: "#1e293b", borderColor: "#334155", textStyle: { color: "#e2e8f0", fontSize: 12 } },
+      series: [{
+        type: "pie", radius: ["50%","75%"],
+        label: { color: EC_TEXT, fontSize: 11, formatter: "{b}\n{c}" },
+        data: [
+          { value: stats.high, name: "高危" },
+          { value: stats.medium, name: "中危" },
+          { value: stats.low, name: "低危/安全" },
+        ],
+        itemStyle: { borderRadius: 5, borderColor: "#0f172a", borderWidth: 3 },
+      }],
+    });
+    window.addEventListener("resize", () => riskPie.resize());
+
+    // Risk trend (from reports dates)
+    const trendMap = {};
+    reports.forEach(r => {
+      if (r.created_at) {
+        const day = r.created_at.slice(0, 10);
+        trendMap[day] = (trendMap[day] || 0) + 1;
+      }
+    });
+    const trendDays = Object.keys(trendMap).sort().slice(-7);
+    const trendChart = echarts.init($("#chart-risk-trend"));
+    trendChart.setOption({
+      ...ecBase(),
+      color: ["#fbbf24"],
+      tooltip: { trigger: "axis", backgroundColor: "#1e293b", borderColor: "#334155", textStyle: { color: "#e2e8f0", fontSize: 12 } },
+      grid: { top: 20, right: 20, bottom: 30, left: 40 },
+      xAxis: { type: "category", data: trendDays.map(d => d.slice(5)), axisLine: { lineStyle: { color: EC_LINE } }, axisLabel: { color: EC_TEXT, fontSize: 11 } },
+      yAxis: { type: "value", minInterval: 1, splitLine: { lineStyle: { color: EC_LINE, type: "dashed" } }, axisLabel: { color: EC_TEXT, fontSize: 11 } },
+      series: [{
+        type: "bar", data: trendDays.map(d => trendMap[d]),
+        barWidth: "40%",
+        itemStyle: { borderRadius: [4,4,0,0], color: new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:"#fbbf24"},{offset:1,color:"rgba(251,191,36,.3)"}]) },
+      }],
+    });
+    window.addEventListener("resize", () => trendChart.resize());
+
+    // Table
     const container = $("#risk-table-container");
     const emptyEl = $("#risk-empty");
-
     if (reports.length === 0) {
       emptyEl.style.display = "";
-      const t = container.querySelector("table"); if (t) t.remove();
+      container.innerHTML = "";
       return;
     }
     emptyEl.style.display = "none";
-
     let html = `<table class="w-full text-sm"><thead><tr class="text-slate-500 text-xs border-b border-slate-700/40">
-      <th class="text-left py-2 px-4 font-medium">ID</th>
-      <th class="text-left py-2 px-4 font-medium">设备标识</th>
-      <th class="text-left py-2 px-4 font-medium">风险等级</th>
-      <th class="text-left py-2 px-4 font-medium">风险评分</th>
-      <th class="text-left py-2 px-4 font-medium">告警</th>
-      <th class="text-left py-2 px-4 font-medium">上报时间</th>
-      <th class="text-right py-2 px-4 font-medium">操作</th>
+      <th class="text-left py-3 px-4 font-medium">ID</th>
+      <th class="text-left py-3 px-4 font-medium">设备标识</th>
+      <th class="text-left py-3 px-4 font-medium">风险等级</th>
+      <th class="text-left py-3 px-4 font-medium">评分</th>
+      <th class="text-left py-3 px-4 font-medium">告警</th>
+      <th class="text-left py-3 px-4 font-medium">上报时间</th>
+      <th class="text-right py-3 px-4 font-medium">操作</th>
     </tr></thead><tbody>`;
-
     for (const r of reports) {
-      const t = r.created_at ? r.created_at.replace("T", " ").slice(0, 16) : "-";
+      const t = r.created_at ? r.created_at.replace("T"," ").slice(0,16) : "-";
+      const pct = r.max_risk_score > 0 ? Math.min(100, r.risk_score / r.max_risk_score * 100) : 0;
+      let barColor = "from-emerald-500 to-emerald-400";
+      if (pct > 60) barColor = "from-red-500 to-red-400";
+      else if (pct > 30) barColor = "from-amber-500 to-amber-400";
       html += `<tr class="task-row border-b border-slate-700/20">
-        <td class="py-2.5 px-4 text-slate-500 text-xs">#${r.id}</td>
-        <td class="py-2.5 px-4 text-slate-300 text-xs font-mono truncate max-w-[140px]" title="${r.device_fingerprint || ''}">${r.device_fingerprint || '-'}</td>
-        <td class="py-2.5 px-4">${riskBadge(r.risk_level)}</td>
-        <td class="py-2.5 px-4">${scoreBar(r.risk_score, r.max_risk_score)}</td>
-        <td class="py-2.5 px-4 text-xs">
+        <td class="py-3 px-4 text-slate-500 text-xs">#${r.id}</td>
+        <td class="py-3 px-4 text-slate-300 text-xs font-mono truncate max-w-[140px]" title="${r.device_fingerprint||''}">${r.device_fingerprint||'-'}</td>
+        <td class="py-3 px-4">${riskBadge(r.risk_level)}</td>
+        <td class="py-3 px-4"><div class="flex items-center gap-2 w-28">
+          <div class="flex-1 bg-slate-700/30 rounded-full h-1.5 overflow-hidden"><div class="h-full rounded-full bg-gradient-to-r ${barColor}" style="width:${pct.toFixed(0)}%"></div></div>
+          <span class="text-xs text-slate-400">${r.risk_score}/${r.max_risk_score}</span>
+        </div></td>
+        <td class="py-3 px-4 text-xs">
           ${r.warning_count > 0 ? `<span class="text-amber-400">${r.warning_count} 警告</span>` : ''}
           ${r.danger_count > 0 ? `<span class="text-red-400 ml-1">${r.danger_count} 危险</span>` : ''}
           ${r.warning_count === 0 && r.danger_count === 0 ? '<span class="text-slate-500">无</span>' : ''}
         </td>
-        <td class="py-2.5 px-4 text-slate-500 text-xs">${t}</td>
-        <td class="py-2.5 px-4 text-right space-x-3 text-xs">
+        <td class="py-3 px-4 text-slate-500 text-xs">${t}</td>
+        <td class="py-3 px-4 text-right space-x-3 text-xs">
           <button onclick="viewRiskDetail(${r.id})" class="text-brand-400 hover:text-brand-300 transition-colors">详情</button>
           <button onclick="deleteRiskReport(${r.id})" class="text-red-400/70 hover:text-red-300 transition-colors">删除</button>
         </td>
       </tr>`;
     }
     html += `</tbody></table>`;
-    const ex = container.querySelector("table"); if (ex) ex.remove();
-    container.insertAdjacentHTML("beforeend", html);
-  } catch (e) {
-    console.error("Failed to load risk data:", e);
-  }
+    container.innerHTML = html;
+  } catch (e) { console.error("Risk load failed:", e); }
 }
 
 async function viewRiskDetail(id) {
@@ -513,91 +778,163 @@ async function viewRiskDetail(id) {
     const fps = data.fingerprints || [];
     const dets = data.detections || [];
 
-    let html = '';
-
-    // Overview
-    html += `<div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-      <div class="bg-slate-900/60 rounded-xl p-3 text-center">
-        <p class="text-xs text-slate-500 mb-1">风险等级</p>
-        ${riskBadge(report.risk_level)}
-      </div>
-      <div class="bg-slate-900/60 rounded-xl p-3 text-center">
-        <p class="text-xs text-slate-500 mb-1">风险评分</p>
-        <p class="text-white font-bold">${report.risk_score} / ${report.max_risk_score}</p>
-      </div>
-      <div class="bg-slate-900/60 rounded-xl p-3 text-center">
-        <p class="text-xs text-slate-500 mb-1">警告数</p>
-        <p class="text-amber-400 font-bold">${report.warning_count}</p>
-      </div>
-      <div class="bg-slate-900/60 rounded-xl p-3 text-center">
-        <p class="text-xs text-slate-500 mb-1">危险数</p>
-        <p class="text-red-400 font-bold">${report.danger_count}</p>
-      </div>
+    let html = `<div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div class="bg-slate-900/60 rounded-xl p-3 text-center"><p class="text-xs text-slate-500 mb-1">风险等级</p>${riskBadge(report.risk_level)}</div>
+      <div class="bg-slate-900/60 rounded-xl p-3 text-center"><p class="text-xs text-slate-500 mb-1">评分</p><p class="text-white font-bold">${report.risk_score}/${report.max_risk_score}</p></div>
+      <div class="bg-slate-900/60 rounded-xl p-3 text-center"><p class="text-xs text-slate-500 mb-1">警告</p><p class="text-amber-400 font-bold">${report.warning_count}</p></div>
+      <div class="bg-slate-900/60 rounded-xl p-3 text-center"><p class="text-xs text-slate-500 mb-1">危险</p><p class="text-red-400 font-bold">${report.danger_count}</p></div>
     </div>`;
 
-    // Detections
     if (dets.length > 0) {
-      html += `<div>
-        <h4 class="text-white text-sm font-semibold mb-2 flex items-center gap-2">
-          <svg class="w-4 h-4 text-red-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-          检测结果 (${dets.length})
-        </h4>
-        <div class="space-y-1.5">`;
+      html += `<div><h4 class="text-white text-sm font-semibold mb-3">检测结果 (${dets.length})</h4><div class="space-y-2">`;
       for (const d of dets) {
-        const statusColor = d.status === 'FOUND' || d.status === 'DETECTED' ? 'text-red-400' : 'text-emerald-400';
-        const detailStr = d.details && typeof d.details === 'object' && Object.keys(d.details).length > 0
-          ? `<pre class="mt-1 text-[11px] text-slate-500 bg-slate-900/40 rounded p-2 overflow-x-auto">${JSON.stringify(d.details, null, 2)}</pre>` : '';
-        html += `<div class="bg-slate-900/40 rounded-lg px-4 py-2.5 flex items-start gap-3">
-          <div class="flex-1 min-w-0">
-            <div class="flex items-center gap-2 flex-wrap">
-              <span class="text-white text-sm">${d.detector_name}</span>
-              <span class="${statusColor} text-xs font-medium">${d.status}</span>
-              ${riskBadge(d.risk_level)}
-              <span class="text-xs text-slate-500">+${d.score}</span>
-            </div>
-            ${detailStr}
-          </div>
+        const isFound = d.status === "FOUND" || d.status === "DETECTED";
+        const sc = isFound ? "text-red-400" : "text-emerald-400";
+        const bgc = isFound ? "bg-red-500/5 border-red-500/10" : "bg-emerald-500/5 border-emerald-500/10";
+        const detailStr = d.details && typeof d.details === "object" && Object.keys(d.details).length > 0
+          ? `<pre class="mt-2 text-[11px] text-slate-500 bg-slate-900/50 rounded-lg p-2.5 overflow-x-auto">${JSON.stringify(d.details, null, 2)}</pre>` : "";
+        html += `<div class="border ${bgc} rounded-xl px-4 py-3">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="text-white text-sm font-medium">${d.detector_name}</span>
+            <span class="${sc} text-xs font-medium">${d.status}</span>
+            ${riskBadge(d.risk_level)}
+            <span class="text-xs text-slate-500 ml-auto">+${d.score}</span>
+          </div>${detailStr}
         </div>`;
       }
       html += `</div></div>`;
     }
 
-    // Fingerprints
     if (fps.length > 0) {
-      html += `<div>
-        <h4 class="text-white text-sm font-semibold mb-2 flex items-center gap-2">
-          <svg class="w-4 h-4 text-brand-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"/></svg>
-          设备指纹 (${fps.length})
-        </h4>
-        <div class="bg-slate-900/40 rounded-xl overflow-hidden">
-          <table class="w-full text-sm"><tbody>`;
+      html += `<div><h4 class="text-white text-sm font-semibold mb-3">设备指纹 (${fps.length})</h4>
+        <div class="bg-slate-900/40 rounded-xl overflow-hidden"><table class="w-full text-sm"><tbody>`;
       for (const f of fps) {
-        html += `<tr class="border-b border-slate-700/20">
-          <td class="py-1.5 px-4 text-slate-500 text-xs w-40 font-mono">${f.field_name}</td>
-          <td class="py-1.5 px-4 text-slate-300 text-xs break-all">${f.field_value || '-'}</td>
+        html += `<tr class="border-b border-slate-700/15">
+          <td class="py-2 px-4 text-slate-500 text-xs w-40 font-mono">${f.field_name}</td>
+          <td class="py-2 px-4 text-slate-300 text-xs break-all">${f.field_value || '-'}</td>
         </tr>`;
       }
       html += `</tbody></table></div></div>`;
     }
-
     body.innerHTML = html;
-  } catch (e) {
-    body.innerHTML = `<p class="text-red-400 text-center py-8">加载失败: ${e.message}</p>`;
-  }
+  } catch (e) { body.innerHTML = `<p class="text-red-400 text-center py-8">加载失败: ${e.message}</p>`; }
 }
 
 async function deleteRiskReport(id) {
   if (!confirm("确定删除此风险报告？")) return;
-  try {
-    await authFetch(`${API}/api/risk/reports/${id}`, { method: "DELETE" });
-    loadRiskData();
-  } catch (_) {}
+  try { await authFetch(`${API}/api/risk/reports/${id}`, { method: "DELETE" }); loadRiskData(); } catch (_) {}
 }
 
-// Bind risk events
 const btnRiskRefresh = $("#btn-risk-refresh");
 if (btnRiskRefresh) btnRiskRefresh.addEventListener("click", loadRiskData);
 const riskModal = $("#risk-detail-modal");
 const riskCloseBtn = $("#risk-detail-close");
 if (riskCloseBtn) riskCloseBtn.addEventListener("click", () => { riskModal.style.display = "none"; });
 if (riskModal) riskModal.addEventListener("click", (e) => { if (e.target === riskModal) riskModal.style.display = "none"; });
+
+// ═══════════════════════════════════════════════════════════════
+//  6. System Management
+// ═══════════════════════════════════════════════════════════════
+
+function renderSystemPage(d) {
+  const allLayers = [...d.anti_debug.native_layers, ...d.anti_debug.java_layers];
+
+  $("#sys-layers").textContent = allLayers.length;
+  $("#sys-lines").textContent = d.stats.total_code_lines.toLocaleString();
+  $("#sys-tasks").textContent = `${d.stats.completed}/${d.stats.total_tasks}`;
+  $("#sys-abis").textContent = d.components.native.abis.length;
+
+  // Components
+  const compMap = {
+    protector_tool: { name: "Protector-Tool", desc: "PC 端加壳工具 (Java 17)" },
+    stub_app: { name: "Stub-App", desc: "设备端壳程序 (Android)" },
+    native: { name: "Native Layer", desc: "C++ 反调试 + AES 解密 (NDK)" },
+    web_server: { name: "Web Server", desc: "FastAPI 异步后端 (Python)" },
+  };
+  $("#sys-components").innerHTML = Object.entries(d.components).map(([k, v]) => {
+    const c = compMap[k];
+    return `<div class="flex items-center gap-3 p-3 rounded-xl ${v.ready ? 'bg-emerald-500/5 border border-emerald-500/15' : 'bg-red-500/5 border border-red-500/15'}">
+      <div class="flex-1 min-w-0"><p class="text-white text-sm font-medium">${c.name}</p><p class="text-slate-500 text-[11px]">${c.desc}</p></div>
+      <span class="tag ${v.ready ? 'bg-emerald-500/15 text-emerald-300' : 'bg-red-500/15 text-red-300'}">${v.ready ? '就绪' : '未就绪'}</span>
+    </div>`;
+  }).join("");
+
+  // Tools
+  const toolNames = { java: "Java (JDK 17)", apksigner: "apksigner", zipalign: "zipalign" };
+  $("#sys-tools").innerHTML = Object.entries(d.tools).map(([k, ok]) => `
+    <div class="flex items-center justify-between py-2">
+      <span class="text-sm text-slate-300">${toolNames[k] || k}</span>
+      <span class="tag ${ok ? 'bg-emerald-500/15 text-emerald-300' : 'bg-red-500/15 text-red-300'}">${ok ? '可用' : '未找到'}</span>
+    </div>`).join("");
+
+  // Native libs
+  const soSizes = d.components.native.so_sizes || {};
+  if (Object.keys(soSizes).length) {
+    $("#sys-native").innerHTML = Object.entries(soSizes).map(([abi, sz]) => `
+      <div class="flex items-center justify-between py-2">
+        <span class="text-sm font-mono text-slate-300">${abi}</span>
+        <span class="text-xs text-slate-500">${(sz / 1024).toFixed(0)} KB</span>
+      </div>`).join("");
+  } else {
+    $("#sys-native").innerHTML = '<p class="text-xs text-slate-500 py-2">未编译</p>';
+  }
+
+  // Source bar chart
+  const allFiles = {};
+  for (const [, cv] of Object.entries(d.components)) { if (cv.files) Object.assign(allFiles, cv.files); }
+  const sorted = Object.entries(allFiles).sort((a, b) => b[1] - a[1]);
+
+  const sourceChart = echarts.init($("#chart-source-bar"));
+  sourceChart.setOption({
+    ...ecBase(),
+    color: ["#818cf8"],
+    tooltip: { trigger: "axis", backgroundColor: "#1e293b", borderColor: "#334155", textStyle: { color: "#e2e8f0", fontSize: 12 }, axisPointer: { type: "shadow" } },
+    grid: { top: 10, right: 30, bottom: 20, left: 140 },
+    xAxis: { type: "value", splitLine: { lineStyle: { color: EC_LINE, type: "dashed" } }, axisLabel: { color: EC_TEXT, fontSize: 11 } },
+    yAxis: { type: "category", data: sorted.map(([n]) => n).reverse(), axisLine: { lineStyle: { color: EC_LINE } }, axisLabel: { color: EC_TEXT, fontSize: 10, width: 130, overflow: "truncate" } },
+    series: [{
+      type: "bar", data: sorted.map(([, v]) => v).reverse(),
+      barWidth: "60%",
+      itemStyle: { borderRadius: [0, 4, 4, 0], color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [{ offset: 0, color: "rgba(129,140,248,.4)" }, { offset: 1, color: "#818cf8" }]) },
+      label: { show: true, position: "right", color: EC_TEXT, fontSize: 10 },
+    }],
+  });
+  window.addEventListener("resize", () => sourceChart.resize());
+}
+
+async function loadDbStatus() {
+  try {
+    const res = await authFetch(`${API}/api/system/db-status`);
+    const d = await res.json();
+    if (d.connected) {
+      $("#sys-db").innerHTML = `
+        <div class="flex items-center justify-between py-2">
+          <span class="text-sm text-slate-300">连接状态</span>
+          <span class="tag bg-emerald-500/15 text-emerald-300">已连接</span>
+        </div>
+        <div class="flex items-center justify-between py-2">
+          <span class="text-sm text-slate-300">风险报告数</span>
+          <span class="text-sm text-white font-medium">${d.report_count}</span>
+        </div>
+        <div class="flex items-center justify-between py-2">
+          <span class="text-sm text-slate-300">用户数</span>
+          <span class="text-sm text-white font-medium">${d.user_count}</span>
+        </div>`;
+    } else {
+      $("#sys-db").innerHTML = `
+        <div class="flex items-center justify-between py-2">
+          <span class="text-sm text-slate-300">连接状态</span>
+          <span class="tag bg-red-500/15 text-red-300">未连接</span>
+        </div>
+        <p class="text-xs text-red-400">${d.error || "连接失败"}</p>`;
+    }
+  } catch (_) {
+    $("#sys-db").innerHTML = '<p class="text-xs text-slate-500 py-2">无法获取状态</p>';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  Init: load dashboard on start
+// ═══════════════════════════════════════════════════════════════
+
+switchTab("dashboard");
