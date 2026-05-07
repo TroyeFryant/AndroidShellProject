@@ -80,3 +80,5 @@ temp/
 *.pem
 *.key
 *.crt
+
+./group_projs

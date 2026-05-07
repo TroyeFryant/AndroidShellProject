@@ -4,19 +4,13 @@
 
 ## 摘　　要
 
-随着Android应用的广泛普及，APK逆向分析与破解技术日趋成熟，应用程序面临代码反编译、核心算法窃取和二次打包等安全威胁。传统代码混淆仅能增加逆向阅读难度，无法从根本上阻止攻击者获取原始字节码。因此，研究一种高效、兼容性强的APK加壳保护方案具有重要的理论意义和工程实践价值。
+随着Android应用的广泛普及，APK面临反编译、算法窃取和二次打包等安全威胁。传统代码混淆无法从根本上保护原始字节码，因此研究高效的APK加壳保护方案具有重要意义。
 
-本文设计并实现了一套完整的Android APK加壳保护框架，以"主动反调试"和"动态DEX加密解密"为两条技术主线，涵盖PC端加壳工具、设备端壳程序和Web数据可视化管理平台三大核心模块。
+本文以"主动反调试"和"动态DEX加密解密"为技术主线，设计并实现了一套Android APK加壳保护框架，涵盖PC端加壳工具、设备端壳程序和Web管理平台三大模块。加密层面采用每包随机密钥的AES-128-CBC方案，结合HMAC-SHA256认证加密、设备绑定密钥派生和解密后内存清理，构建端到端的数据安全保障链。反调试层面构建了**二十二层纵深防御体系**（19层Native + 3层Java），覆盖进程级（ptrace守护、SIGTRAP探针）、环境级（模拟器/Root/容器/云手机检测）、工具级（Frida八维检测、端口扫描）、代码级（CRC32校验、Hook检测、RWX内存扫描）和Java层（JDWP检测）五个维度，所有检测触发静默崩溃。系统集成层面实现了AXML清单编辑、纯内存DEX加载、RiskEngine设备风险上报，并以ECharts构建了六页式数据可视化管理平台。
 
-在动态加密解密层面，系统采用**每包随机密钥**的AES-128-CBC加密方案，加密输出格式为`[IV(16)] || [ciphertext] || [HMAC-SHA256(32)]`，在C++层自实现SHA-256和HMAC-SHA256算法进行密文完整性校验。运行时对解密后的DEX执行魔数和Adler32校验和验证，形成端到端的完整性保障链。此外实现了**设备绑定密钥派生**和**解密后内存清理**（Java层Arrays.fill + Native层madvise），从密钥管理和内存安全两个维度强化加密机制。
+测试表明，加固后的APK能有效阻止JADX、Frida、GDB等逆向工具的攻击，在Android 5.0至14+上稳定运行。
 
-在主动反调试层面，系统构建了**二十二层纵深防御体系**（19层Native + 3层Java），按功能分为五类：**进程级防护**（ptrace自占位、TracerPid轮询、双进程交叉守护、SIGTRAP信号探针）、**环境级防护**（模拟器检测、Root/Magisk/Xposed检测、容器/沙箱检测、云手机检测、Mount异常分析）、**工具级防护**（Frida八维全特征检测及持续监控、/proc/net/tcp端口表扫描）、**代码级防护**（GOT/PLT Hook检测、.text段CRC32完整性校验、时间差检测、ART方法完整性检测、dlsym导出符号探测、异常RWX内存段检测、dl_iterate_phdr库扫描）和**Java层防护**（JDWP调试器检测、FLAG_DEBUGGABLE检测、waitingForDebugger检测）。所有检测通过空函数指针触发SIGSEGV实现**静默崩溃**，结合JNI动态注册和符号隐藏策略抵御逆向分析。
-
-在系统集成层面，实现了AXML二进制清单解析与修改引擎、InMemoryDexClassLoader纯内存DEX加载和原始Application生命周期代理。集成**RiskEngine SDK**进行设备端风险评估与上报，结合**MySQL数据库**和**JWT认证机制**构建了基于FastAPI的Web后端。前端以Tailwind CSS + ECharts构建六页式SPA数据可视化管理平台（仪表盘、APK加固、加固记录、防护体系、设备风险、系统管理），实现APK上传加固和安全态势监控的一站式管理。
-
-测试结果表明，加固后的APK能够有效阻止JADX、Frida、GDB等主流逆向工具的分析攻击，在Android 5.0至14+多版本真机和模拟器上稳定运行，验证了方案的可行性与实用性。
-
-**关键词：** Android安全；APK加壳；DEX动态加密解密；主动反调试；双进程守护；HMAC-SHA256；代码完整性校验；Hook检测；InMemoryDexClassLoader；RiskEngine；设备指纹；JWT认证；ECharts数据可视化
+**关键词：** Android安全；APK加壳；DEX加密解密；主动反调试；HMAC-SHA256；Hook检测；RiskEngine；ECharts数据可视化
 
 ---
 
@@ -24,19 +18,9 @@
 
 **Title:** Design and Implementation of an Android Packing Framework Based on Active Anti-debugging and Dynamic DEX Encryption/Decryption Mechanisms
 
-With the widespread adoption of Android mobile applications, APK reverse engineering techniques have become increasingly sophisticated, posing severe threats such as bytecode decompilation, algorithm theft, and unauthorized repackaging. Traditional code obfuscation cannot fundamentally prevent attackers from obtaining original bytecode. Therefore, investigating an efficient APK packing protection scheme holds significant theoretical and practical value.
+As APK reverse engineering techniques become increasingly sophisticated, Android applications face severe threats including decompilation, algorithm theft, and repackaging. This thesis designs and implements an Android APK packing framework centered on "active anti-debugging" and "dynamic DEX encryption/decryption", comprising a PC-side packing tool, a device-side shell application, and a Web management platform. The encryption layer employs per-APK random key AES-128-CBC with HMAC-SHA256 authenticated encryption, device-binding key derivation, and post-decryption memory cleanup. The anti-debugging layer constructs a **twenty-two-layer defense-in-depth architecture** (19 Native + 3 Java) spanning process-level (ptrace guarding, SIGTRAP probe), environment-level (emulator/Root/container/cloud phone detection), tool-level (eight-dimensional Frida detection, port scanning), code-level (CRC32 integrity, Hook detection, RWX memory scanning), and Java-layer (JDWP detection), all triggering silent crashes. The system integrates RiskEngine SDK for device risk reporting and provides a six-page ECharts-based data visualization management platform. Tests confirm that hardened APKs effectively resist JADX, Frida, and GDB across Android 5.0 to 14+.
 
-This thesis designs and implements a comprehensive Android APK packing protection framework, centered on two pillars: "active anti-debugging" and "dynamic DEX encryption/decryption", encompassing a PC-side packing tool, a device-side shell application, and a Web data visualization management platform.
-
-At the encryption/decryption level, the system employs a **per-APK random key** AES-128-CBC scheme with an Encrypt-then-MAC output format `[IV(16)] || [ciphertext] || [HMAC-SHA256(32)]`, using self-implemented SHA-256 and HMAC-SHA256 in C++. Runtime verification includes DEX magic number and Adler32 checksum validation, **device-binding key derivation**, and **post-decryption memory cleanup** (Java Arrays.fill + Native madvise).
-
-At the anti-debugging level, the system constructs a **twenty-two-layer defense-in-depth architecture** (19 Native + 3 Java), organized into five categories: **process-level** (ptrace preemption, TracerPid polling, dual-process cross-guarding, SIGTRAP signal probe), **environment-level** (emulator/Root/Magisk/Xposed detection, container/sandbox detection, cloud phone detection, mount anomaly analysis), **tool-level** (eight-dimensional Frida detection with continuous monitoring, /proc/net/tcp port scanning), **code-level** (GOT/PLT Hook detection, .text CRC32 integrity, timing-based detection, ART method integrity, dlsym symbol probing, RWX memory detection, dl_iterate_phdr library scanning), and **Java-layer** (JDWP, FLAG_DEBUGGABLE, waitingForDebugger detection). All detections trigger **silent crashes** via null function pointer invocation, combined with JNI dynamic registration and symbol hiding.
-
-The system also integrates a **RiskEngine SDK** for device-side risk assessment, a **MySQL database** for persistent device fingerprint storage, and a **JWT authentication system** for access control. The frontend is built as a **six-page SPA** (Dashboard, APK Hardening, Records, Protection System, Device Risk, System Management) using **ECharts** for multi-dimensional data visualization.
-
-Test results demonstrate that hardened APKs effectively resist analysis from JADX, Frida, and GDB, running stably across Android 5.0 to 14+ on both physical devices and emulators.
-
-**Keywords:** Android Security; APK Packing; Dynamic DEX Encryption/Decryption; Active Anti-debugging; Dual-process Guarding; HMAC-SHA256; Code Integrity Verification; Hook Detection; InMemoryDexClassLoader; RiskEngine; Device Fingerprint; JWT Authentication; ECharts Data Visualization
+**Keywords:** Android Security; APK Packing; DEX Encryption/Decryption; Active Anti-debugging; HMAC-SHA256; Hook Detection; RiskEngine; ECharts Data Visualization
 
 ---
 
