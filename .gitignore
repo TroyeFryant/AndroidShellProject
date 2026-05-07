@@ -81,4 +81,8 @@ temp/
 *.key
 *.crt
 
+# ===== 项目运行时文件 =====
+storage/
+Shell-Web-Server/storage/
+
 ./group_projs

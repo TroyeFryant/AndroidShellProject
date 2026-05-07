@@ -3,14 +3,18 @@
 运行: python init_db.py
 """
 
+import os
 import pymysql
 import bcrypt
+from dotenv import load_dotenv
 
-DB_HOST = "20.2.70.27"
-DB_PORT = 3306
-DB_USER = "root"
-DB_PASS = "qaz.060725"
-DB_NAME = "shell_protector"
+load_dotenv()
+
+DB_HOST = os.environ.get("DB_HOST", "127.0.0.1")
+DB_PORT = int(os.environ.get("DB_PORT", "3306"))
+DB_USER = os.environ.get("DB_USER", "root")
+DB_PASS = os.environ.get("DB_PASS", "")
+DB_NAME = os.environ.get("DB_NAME", "shell_protector")
 
 def get_conn(database=None):
     return pymysql.connect(

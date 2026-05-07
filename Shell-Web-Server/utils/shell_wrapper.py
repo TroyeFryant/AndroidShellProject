@@ -9,6 +9,9 @@ import shutil
 import time
 import zipfile
 from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 _BASE = Path(__file__).resolve().parent.parent
 _PROJECT_ROOT = _BASE.parent
@@ -22,8 +25,8 @@ GUARD_LIBS_DIR = str(_PROJECT_ROOT / "Stub-App" / "libs")
 import re
 _DEX_PATTERN = re.compile(r"^classes\d*\.dex$")
 
-KEYSTORE_PATH = os.environ.get("KEYSTORE_PATH", "/Users/fangyanchao/code/AndroidShellProject/Shell-Web-Server/utils/shell.jks")
-KEYSTORE_PASS = os.environ.get("KEYSTORE_PASS", "123456")
+KEYSTORE_PATH = os.environ.get("KEYSTORE_PATH", str(Path(__file__).resolve().parent / "shell.jks"))
+KEYSTORE_PASS = os.environ.get("KEYSTORE_PASS", "")
 KEY_ALIAS = os.environ.get("KEY_ALIAS", "shell")
 
 CLEANUP_MAX_AGE_SECONDS = 24 * 3600

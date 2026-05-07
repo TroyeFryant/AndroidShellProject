@@ -2,15 +2,19 @@
 数据库连接池模块
 """
 
+import os
 import pymysql
 from contextlib import contextmanager
+from dotenv import load_dotenv
+
+load_dotenv()
 
 DB_CONFIG = {
-    "host": "20.2.70.27",
-    "port": 3306,
-    "user": "root",
-    "password": "qaz.060725",
-    "database": "shell_protector",
+    "host": os.environ.get("DB_HOST", "127.0.0.1"),
+    "port": int(os.environ.get("DB_PORT", "3306")),
+    "user": os.environ.get("DB_USER", "root"),
+    "password": os.environ.get("DB_PASS", ""),
+    "database": os.environ.get("DB_NAME", "shell_protector"),
     "charset": "utf8mb4",
     "cursorclass": pymysql.cursors.DictCursor,
 }
